@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# Template: user_data_worker.sh.tftpl
+# Description: User data script for provisioning Worker nodes.
+# ==============================================================================
+
+set -euo pipefail
+
+exec > >(tee /var/log/user-data-worker.log|logger -t user-data -s 2>/dev/console) 2>&1
+
+echo "Starting Worker Node setup..."
+
+# Embed Common Setup Script
+cat << 'EOF_COMMON' > /tmp/common.sh
+${common_script}
+EOF_COMMON
+
+chmod +x /tmp/common.sh
+/tmp/common.sh
+
+# Embed Install K8s Script
+cat << 'EOF_K8S' > /tmp/install_k8s.sh
+${install_k8s_script}
+EOF_K8S
+
+chmod +x /tmp/install_k8s.sh
+/tmp/install_k8s.sh "${k8s_version}"
+
+# Install AWS CLI v2 for Parameter Store integration
+apt-get install -y unzip curl
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip && ./aws/install && rm -rf awscliv2.zip aws
+
+# Embed Join Worker Script
+cat << 'EOF_JOIN' > /tmp/join_worker.sh
+${join_worker_script}
+EOF_JOIN
+
+chmod +x /tmp/join_worker.sh
+
+# Retry mechanism waiting for primary master to upload SSM parameters
+MAX_RETRIES=30
+RETRY_COUNT=0
+until /tmp/join_worker.sh "${control_plane_endpoint}" "" "" || [ $RETRY_COUNT -eq $MAX_RETRIES ]; do
+    echo "Primary master parameters not ready yet. Retrying in 15 seconds... ($RETRY_COUNT/$MAX_RETRIES)"
+    sleep 15
+    RETRY_COUNT=$((RETRY_COUNT + 1))
+done
+
+echo "Worker node setup complete!"
