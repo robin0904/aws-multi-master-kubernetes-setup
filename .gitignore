@@ -1,0 +1,153 @@
+# =============================================================================
+# Terraform
+# =============================================================================
+
+# Local .terraform directories (downloaded providers and modules)
+**/.terraform/*
+
+# Terraform lock file — commit this to version control
+# !.terraform.lock.hcl
+
+# Terraform plan files (contain sensitive data)
+*.tfplan
+tfplan
+
+# Terraform state files — NEVER commit state
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Terraform crash log
+crash.log
+crash.*.log
+
+# Terraform override files (local developer overrides)
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Terraform variable files with sensitive values
+# terraform.tfvars is committed as example — actual values should not contain secrets
+# Uncomment the next line if your tfvars contain secrets:
+# terraform.tfvars
+
+# Terraform backend config (contains bucket names — safe to commit but listed here for awareness)
+# backend.hcl
+
+# =============================================================================
+# SSH Keys & Certificates
+# =============================================================================
+
+*.pem
+*.key
+*.crt
+*_rsa
+*_rsa.pub
+*_ed25519
+*_ed25519.pub
+id_rsa
+id_rsa.pub
+k8s-cluster-key
+k8s-cluster-key.pub
+
+# =============================================================================
+# Kubernetes
+# =============================================================================
+
+# kubeconfig files (contain cluster credentials)
+kubeconfig
+kubeconfig.*
+*.kubeconfig
+admin.conf
+*.conf
+
+# Join commands (contain bootstrap tokens — short-lived but sensitive)
+join-*.sh
+join-control-plane.sh
+join-worker.sh
+
+# =============================================================================
+# Secrets & Credentials
+# =============================================================================
+
+.env
+.env.*
+*.secret
+secrets/
+credentials/
+*credentials*
+*secrets*
+
+# AWS credentials
+.aws/credentials
+aws-credentials.json
+
+# =============================================================================
+# Terraform Output Files (may contain IPs and sensitive values)
+# =============================================================================
+
+tf-outputs.json
+outputs.json
+*-outputs.json
+
+# =============================================================================
+# OS & Editor
+# =============================================================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Linux
+*~
+.nfs*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# JetBrains IDEs
+.idea/
+*.iml
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*#
+.#*
+
+# =============================================================================
+# Logs
+# =============================================================================
+
+*.log
+logs/
+/tmp/
+
+# =============================================================================
+# Build & Test Artifacts
+# =============================================================================
+
+dist/
+build/
+coverage/
+.cache/
+
+# =============================================================================
+# Package Managers
+# =============================================================================
+
+node_modules/
+vendor/

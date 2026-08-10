@@ -1,0 +1,47 @@
+# =============================================================================
+# terraform/environments/qa/terraform.tfvars.example
+# QA environment — mirrors prod topology, smaller instance types.
+# =============================================================================
+
+aws_region   = "us-east-1"
+environment  = "qa"
+cluster_name = "k8s-cluster"
+project_name = "k8s-multi-master"
+owner        = "platform-team"
+cost_center  = "engineering"
+created_date = "2024-01-01"
+
+vpc_cidr             = "10.1.0.0/16"
+availability_zones   = ["us-east-1a", "us-east-1b"]
+public_subnet_cidrs  = ["10.1.1.0/24", "10.1.2.0/24"]
+private_subnet_cidrs = ["10.1.10.0/24", "10.1.11.0/24"]
+
+# QA uses HA NAT to match production routing topology
+enable_nat_gateway_ha   = true
+enable_flow_logs        = true
+flow_log_retention_days = 30
+
+admin_cidr_block = "0.0.0.0/0"  # CHANGE THIS
+api_access_cidr  = "0.0.0.0/0"  # CHANGE THIS
+
+enable_bastion    = true
+lb_type           = "haproxy"
+nlb_internal      = false
+enable_ecr_access = false
+
+generate_key_pair   = false
+ssh_public_key_path = "~/.ssh/k8s-cluster-key.pub"
+ami_id              = ""
+
+bastion_instance_type = "t3.micro"
+haproxy_instance_type = "t3.small"
+master_instance_type  = "t3.medium"
+worker_instance_type  = "t3.large"
+
+master_count = 3
+worker_count = 3
+
+master_root_volume_size = 50
+worker_root_volume_size = 80
+
+kubernetes_version = "1.29"
