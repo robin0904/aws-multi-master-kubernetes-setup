@@ -1,0 +1,18 @@
+---
+# =============================================================================
+# ansible/playbooks/03-k8s-install.yml
+# Step 3: Install Kubernetes components (kubeadm, kubelet, kubectl)
+#
+# Run: ansible-playbook playbooks/03-k8s-install.yml -i inventory/hosts.yml
+# =============================================================================
+
+- name: Install Kubernetes Components
+  hosts: k8s_nodes
+  serial: 2  # Run 2 hosts in parallel
+  gather_facts: yes
+  roles:
+    - containerd
+    - kubernetes
+  tags:
+    - kubernetes
+    - bootstrap

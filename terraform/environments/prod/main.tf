@@ -1,12 +1,13 @@
 # =============================================================================
 # environments/prod/main.tf
 #
-# Root module for the PRODUCTION environment.
-# Key differences from dev/qa:
+# PRODUCTION environment — Terraform provisions infrastructure ONLY.
+# All Kubernetes + HAProxy configuration is handled by Ansible.
+#
+# Production differences from dev/qa:
 #   - HA NAT Gateway (one per AZ)
-#   - Larger instance types
-#   - Stricter security group CIDRs (api_access_cidr must be restricted)
-#   - All variables have no defaults that would allow 0.0.0.0/0 in prod
+#   - Larger instance types (m5.xlarge masters, m5.2xlarge workers)
+#   - admin_cidr_block and api_access_cidr have NO defaults — must be set explicitly
 # =============================================================================
 
 locals {
@@ -59,6 +60,7 @@ module "security_groups" {
 module "iam" {
   source            = "../../modules/iam"
   name_prefix       = local.name_prefix
+  cluster_name      = var.cluster_name
   enable_ecr_access = var.enable_ecr_access
   common_tags       = module.common_tags.tags
 }
@@ -73,39 +75,39 @@ module "key_pair" {
 }
 
 module "ec2" {
-  source                       = "../../modules/ec2"
-  name_prefix                  = local.name_prefix
-  environment                  = var.environment
-  cluster_name                 = var.cluster_name
-  ami_id                       = var.ami_id
-  public_subnet_ids            = module.vpc.public_subnet_ids
-  private_subnet_ids           = module.vpc.private_subnet_ids
-  key_pair_name                = module.key_pair.key_pair_name
-  bastion_sg_id                = module.security_groups.bastion_sg_id
-  haproxy_sg_id                = module.security_groups.haproxy_sg_id
-  masters_sg_id                = module.security_groups.masters_sg_id
-  workers_sg_id                = module.security_groups.workers_sg_id
-  master_instance_profile_name = module.iam.master_instance_profile_name
-  worker_instance_profile_name = module.iam.worker_instance_profile_name
-  enable_bastion               = var.enable_bastion
-  lb_type                      = var.lb_type
-  bastion_instance_type        = var.bastion_instance_type
-  haproxy_instance_type        = var.haproxy_instance_type
-  master_instance_type         = var.master_instance_type
-  worker_instance_type         = var.worker_instance_type
-  master_count                 = var.master_count
-  worker_count                 = var.worker_count
-  master_root_volume_size      = var.master_root_volume_size
-  worker_root_volume_size      = var.worker_root_volume_size
-  common_tags                  = module.common_tags.tags
-}
+  source = "../../modules/ec2"
 
-module "haproxy" {
-  count              = var.lb_type == "haproxy" ? 1 : 0
-  source             = "../../modules/haproxy"
-  name_prefix        = local.name_prefix
-  master_private_ips = module.ec2.master_private_ips
-  api_server_port    = 6443
+  name_prefix  = local.name_prefix
+  environment  = var.environment
+  ami_id       = var.ami_id
+
+  public_subnet_ids  = module.vpc.public_subnet_ids
+  private_subnet_ids = module.vpc.private_subnet_ids
+  key_pair_name      = module.key_pair.key_pair_name
+
+  bastion_sg_id = module.security_groups.bastion_sg_id
+  haproxy_sg_id = module.security_groups.haproxy_sg_id
+  masters_sg_id = module.security_groups.masters_sg_id
+  workers_sg_id = module.security_groups.workers_sg_id
+
+  master_instance_profile_name  = module.iam.master_instance_profile_name
+  worker_instance_profile_name  = module.iam.worker_instance_profile_name
+  haproxy_instance_profile_name = module.iam.haproxy_instance_profile_name
+  bastion_instance_profile_name = module.iam.bastion_instance_profile_name
+
+  enable_bastion = var.enable_bastion
+  lb_type        = var.lb_type
+
+  bastion_instance_type   = var.bastion_instance_type
+  haproxy_instance_type   = var.haproxy_instance_type
+  master_instance_type    = var.master_instance_type
+  worker_instance_type    = var.worker_instance_type
+  master_count            = var.master_count
+  worker_count            = var.worker_count
+  master_root_volume_size = var.master_root_volume_size
+  worker_root_volume_size = var.worker_root_volume_size
+
+  common_tags = module.common_tags.tags
 }
 
 module "load_balancer" {

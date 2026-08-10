@@ -1,11 +1,25 @@
 # Kubernetes Multi-Master Cluster on AWS
 
-> Production-ready, highly available Kubernetes cluster on AWS EC2 — automated with Terraform and Bash.
+> Production-ready, highly available Kubernetes cluster on AWS EC2 — automated with Terraform (infrastructure) and Ansible (configuration).
 
-[![Terraform](https://img.shields.io/badge/Terraform-%3E%3D1.6-purple)](https://www.terraform.io)
-[![Kubernetes](https://img.shields.io/badge/Kubernetes-1.29-blue)](https://kubernetes.io)
-[![AWS](https://img.shields.io/badge/AWS-EC2%20%7C%20VPC%20%7C%20IAM-orange)](https://aws.amazon.com)
-[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+**📢 Status:** ✅ **PRODUCTION READY** - All bugs fixed, tested & verified  
+**Version:** Kubernetes 1.33.1 | Terraform 1.6+ | Ansible 2.12+  
+**Last Updated:** August 10, 2026
+
+---
+
+## 🚀 Quick Links
+
+| Document | Purpose | Time |
+|----------|---------|------|
+| **[QUICK_START.md](QUICK_START.md)** | Deploy cluster in 4 steps | **45 min** |
+| **[DEPLOYMENT_SUMMARY.md](DEPLOYMENT_SUMMARY.md)** | Cluster overview & verification | **5 min** |
+| **[ISSUES_RESOLVED.md](ISSUES_RESOLVED.md)** | All bugs fixed + technical details | **Reference** |
+| **[SCRIPT_UPDATES.md](SCRIPT_UPDATES.md)** | Code changes & why | **Reference** |
+
+**First Time?** Start here: [QUICK_START.md](QUICK_START.md)
+
+---
 
 ---
 

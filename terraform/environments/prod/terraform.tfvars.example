@@ -47,4 +47,11 @@ worker_count = 5
 master_root_volume_size = 100
 worker_root_volume_size = 200
 
-kubernetes_version = "1.29"
+# ---- Kubernetes version pins ----
+kubernetes_version  = "1.33"
+containerd_version  = "1.7.23"
+runc_version        = "1.2.3"
+cni_plugins_version = "1.6.0"
+calico_version      = "v3.29.1"
+pod_cidr            = "192.168.0.0/16"
+service_cidr        = "10.96.0.0/12"

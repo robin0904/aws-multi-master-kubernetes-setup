@@ -1,0 +1,14 @@
+---
+- name: restart haproxy
+  systemd:
+    name: haproxy
+    state: restarted
+    daemon_reload: yes
+
+- name: reload haproxy
+  command: systemctl reload haproxy
+  changed_when: false
+
+- name: validate haproxy config
+  command: haproxy -f /etc/haproxy/haproxy.cfg -c
+  changed_when: false

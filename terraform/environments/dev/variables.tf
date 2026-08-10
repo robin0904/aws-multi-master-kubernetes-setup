@@ -1,8 +1,6 @@
 # =============================================================================
 # environments/dev/variables.tf
-#
-# All input variables for the dev environment root module.
-# Values are supplied via terraform.tfvars.
+# Infra-only variables. K8s version pins live in ansible/group_vars/all.yml
 # =============================================================================
 
 # ---- AWS ----
@@ -11,52 +9,9 @@ variable "aws_region" {
   type        = string
 }
 
-# ---- Kubernetes version pins (used by SSM module) ----
-variable "kubernetes_version" {
-  description = "Kubernetes version to install."
-  type        = string
-  default     = "1.33"
-}
-
-variable "containerd_version" {
-  description = "containerd version to install."
-  type        = string
-  default     = "1.7.23"
-}
-
-variable "runc_version" {
-  description = "runc version."
-  type        = string
-  default     = "1.2.3"
-}
-
-variable "cni_plugins_version" {
-  description = "CNI plugins version."
-  type        = string
-  default     = "1.6.0"
-}
-
-variable "calico_version" {
-  description = "Calico CNI version."
-  type        = string
-  default     = "v3.29.1"
-}
-
-variable "pod_cidr" {
-  description = "Pod network CIDR."
-  type        = string
-  default     = "192.168.0.0/16"
-}
-
-variable "service_cidr" {
-  description = "Kubernetes service CIDR."
-  type        = string
-  default     = "10.96.0.0/12"
-}
-
-# ---- Project / Environment Identity ----
+# ---- Project Identity ----
 variable "project_name" {
-  description = "Top-level project name for tagging."
+  description = "Project name for tagging."
   type        = string
   default     = "k8s-multi-master"
 }
@@ -67,18 +22,18 @@ variable "environment" {
 }
 
 variable "cluster_name" {
-  description = "Kubernetes cluster name. Used in resource names and tags."
+  description = "Cluster name used in resource names and tags."
   type        = string
 }
 
 variable "owner" {
-  description = "Team or individual owner of this cluster."
+  description = "Owner team for tagging."
   type        = string
   default     = "platform-team"
 }
 
 variable "cost_center" {
-  description = "Cost center for billing allocation."
+  description = "Cost center for billing."
   type        = string
   default     = "engineering"
 }
@@ -91,13 +46,13 @@ variable "created_date" {
 
 # ---- Networking ----
 variable "vpc_cidr" {
-  description = "CIDR block for the VPC."
+  description = "VPC CIDR block."
   type        = string
   default     = "10.0.0.0/16"
 }
 
 variable "availability_zones" {
-  description = "Availability zones to use. Minimum 2."
+  description = "List of AZs to use (minimum 2)."
   type        = list(string)
 }
 
@@ -112,7 +67,7 @@ variable "private_subnet_cidrs" {
 }
 
 variable "enable_nat_gateway_ha" {
-  description = "Deploy one NAT Gateway per AZ for HA outbound. Default false saves cost."
+  description = "One NAT GW per AZ for HA. false = single NAT (cost saving for dev)."
   type        = bool
   default     = false
 }
@@ -131,12 +86,12 @@ variable "flow_log_retention_days" {
 
 # ---- Security ----
 variable "admin_cidr_block" {
-  description = "CIDR allowed to SSH into the Bastion host and access HAProxy stats. Use your IP/range."
+  description = "CIDR allowed to SSH into the Bastion. Use your IP: \"$(curl -s checkip.amazonaws.com)/32\""
   type        = string
 }
 
 variable "api_access_cidr" {
-  description = "CIDR allowed to reach the Kubernetes API on port 6443. 0.0.0.0/0 for dev."
+  description = "CIDR allowed to reach the Kubernetes API (port 6443)."
   type        = string
   default     = "0.0.0.0/0"
 }
@@ -149,13 +104,13 @@ variable "enable_bastion" {
 }
 
 variable "lb_type" {
-  description = "Load balancer type: 'haproxy' or 'nlb'."
+  description = "Load balancer type: 'haproxy' (EC2) or 'nlb' (AWS NLB)."
   type        = string
   default     = "haproxy"
 }
 
 variable "nlb_internal" {
-  description = "Make the NLB internal (private). Only used when lb_type = 'nlb'."
+  description = "Make the NLB internal. Only used when lb_type = 'nlb'."
   type        = bool
   default     = false
 }
@@ -168,15 +123,15 @@ variable "enable_ecr_access" {
 
 # ---- SSH Key ----
 variable "generate_key_pair" {
-  description = "Generate a new key pair via Terraform. Set false to use ssh_public_key_path."
+  description = "Let Terraform generate an SSH key pair. false = use ssh_public_key_path."
   type        = bool
   default     = false
 }
 
 variable "ssh_public_key_path" {
-  description = "Path to an existing SSH public key file."
+  description = "Path to your existing SSH public key file."
   type        = string
-  default     = "~/.ssh/k8s-cluster-key.pub"
+  default     = "~/.ssh/id_ed25519.pub"
 }
 
 variable "generated_key_path" {
@@ -187,39 +142,36 @@ variable "generated_key_path" {
 
 # ---- AMI ----
 variable "ami_id" {
-  description = "Custom AMI ID. Leave empty to use the latest Amazon Linux 2023."
+  description = "Custom AMI ID. Empty = auto-discover latest Amazon Linux 2023."
   type        = string
   default     = ""
 }
 
 # ---- Instance Types ----
 variable "bastion_instance_type" {
-  description = "EC2 instance type for the Bastion."
-  type        = string
-  default     = "t3.micro"
+  type    = string
+  default = "t3.micro"
 }
 
 variable "haproxy_instance_type" {
-  description = "EC2 instance type for HAProxy."
-  type        = string
-  default     = "t3.small"
+  type    = string
+  default = "t3.medium"
 }
 
 variable "master_instance_type" {
-  description = "EC2 instance type for control plane nodes."
+  description = "Minimum t3.medium required for kubeadm (2 vCPU)."
   type        = string
   default     = "t3.medium"
 }
 
 variable "worker_instance_type" {
-  description = "EC2 instance type for worker nodes."
-  type        = string
-  default     = "t3.large"
+  type    = string
+  default = "t3.medium"
 }
 
 # ---- Instance Counts ----
 variable "master_count" {
-  description = "Number of control plane nodes (must be 1, 3, or 5)."
+  description = "Number of control plane nodes. Must be 1, 3, or 5."
   type        = number
   default     = 3
 }
@@ -227,7 +179,7 @@ variable "master_count" {
 variable "worker_count" {
   description = "Number of worker nodes."
   type        = number
-  default     = 3
+  default     = 2
 }
 
 # ---- Volume Sizes ----
@@ -240,12 +192,5 @@ variable "master_root_volume_size" {
 variable "worker_root_volume_size" {
   description = "Root EBS volume size (GiB) for worker nodes."
   type        = number
-  default     = 80
-}
-
-# ---- Kubernetes ----
-variable "kubernetes_version" {
-  description = "Kubernetes version to install (used by Bash scripts, not Terraform)."
-  type        = string
-  default     = "1.29"
+  default     = 50
 }

@@ -1,0 +1,17 @@
+---
+# =============================================================================
+# ansible/playbooks/05-cluster-join.yml
+# Step 5: Join additional masters and all workers to the cluster
+#
+# Run: ansible-playbook playbooks/05-cluster-join.yml -i inventory/hosts.yml
+# =============================================================================
+
+- name: Join Nodes to Cluster
+  hosts: k8s_nodes
+  serial: 2  # Run 2 nodes in parallel
+  gather_facts: yes
+  roles:
+    - cluster_join
+  tags:
+    - cluster-join
+    - bootstrap

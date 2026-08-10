@@ -1,0 +1,16 @@
+---
+# =============================================================================
+# ansible/playbooks/02-haproxy.yml
+# Step 2: Install and configure HAProxy for Kubernetes API load balancing
+#
+# Run: ansible-playbook playbooks/02-haproxy.yml -i inventory/hosts.yml
+# =============================================================================
+
+- name: Install HAProxy Load Balancer
+  hosts: haproxy
+  gather_facts: yes
+  roles:
+    - haproxy
+  tags:
+    - haproxy
+    - bootstrap

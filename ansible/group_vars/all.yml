@@ -1,0 +1,54 @@
+# =============================================================================
+# ansible/group_vars/all.yml
+# Global variables for all hosts — Kubernetes version pins and cluster config
+# =============================================================================
+
+# ---- Kubernetes Component Versions ----
+# Pin all versions here to ensure reproducible builds
+kubernetes_version: "1.33.1"
+kubeadm_version: "1.33.1"
+kubelet_version: "1.33.1"
+kubectl_version: "1.33.1"
+containerd_version: "1.7.23"
+runc_version: "1.2.3"
+cni_plugins_version: "1.6.0"
+calico_version: "v3.29.1"
+calico_helm_chart_version: "v3.29.1"
+
+# ---- Kubernetes Cluster Configuration ----
+cluster_name: "k8s-multi-master"
+pod_cidr: "192.168.0.0/16"              # Calico pod network
+service_cidr: "10.96.0.0/12"             # Kubernetes service network
+api_server_port: 6443
+kubernetes_api_advertise_address: ""     # Will be populated per-node during bootstrap
+
+# ---- Container Runtime Configuration ----
+containerd_config_path: "/etc/containerd/config.toml"
+containerd_cgroup_driver: "systemd"      # Use systemd for cgroup driver
+
+# ---- OS Configuration ----
+swap_enabled: false                      # Kubernetes requires swap to be off
+selinux_enabled: false                   # Disabled for simplicity (enable in prod)
+firewalld_enabled: false                 # Disabled for simplicity (enable in prod)
+
+# ---- HAProxy Configuration ----
+haproxy_port: 6443
+haproxy_bind_address: "*"
+haproxy_mode: "tcp"
+haproxy_balance: "roundrobin"
+
+# ---- Ansible Runtime Configuration ----
+ansible_connection: ssh
+ansible_user: ec2-user
+ansible_become: yes
+ansible_become_method: sudo
+ansible_python_interpreter: /usr/bin/python3
+
+# ---- Timeouts ----
+# Generous timeouts for slow networks or large clusters
+ansible_command_timeout: 120
+ansible_connect_timeout: 120
+
+# ---- Logging ----
+debug_mode: false
+log_level: "info"

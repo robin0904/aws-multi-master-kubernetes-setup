@@ -1,0 +1,426 @@
+# Architecture & Execution Flow Diagrams
+
+## 1. WHERE EVERYTHING RUNS
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     YOUR LOCAL MACHINE                          │
+│                   (Mac / Linux / Windows WSL2)                  │
+│                                                                 │
+│  ┌────────────────────────────────────────────────────────┐    │
+│  │ $ terraform apply                                      │    │
+│  │   → Provisions 7 EC2 instances                        │    │
+│  │   → Creates VPC, subnets, security groups             │    │
+│  │   → Creates IAM roles                                 │    │
+│  │   → Outputs node IPs                                  │    │
+│  │ ✓ RUN FROM YOUR MACHINE                              │    │
+│  └────────────────────────────────────────────────────────┘    │
+│                          ↓                                      │
+│  ┌────────────────────────────────────────────────────────┐    │
+│  │ $ terraform output -json > inventory/tf_outputs.json   │    │
+│  │   → Exports Terraform outputs to JSON                 │    │
+│  │ ✓ RUN FROM YOUR MACHINE                              │    │
+│  └────────────────────────────────────────────────────────┘    │
+│                          ↓                                      │
+│  ┌────────────────────────────────────────────────────────┐    │
+│  │ $ bash inventory/generate-inventory.sh                 │    │
+│  │   → Converts JSON to Ansible inventory                │    │
+│  │ ✓ RUN FROM YOUR MACHINE                              │    │
+│  └────────────────────────────────────────────────────────┘    │
+│                          ↓                                      │
+│  ┌────────────────────────────────────────────────────────┐    │
+│  │ $ ansible-playbook playbooks/site.yml                 │    │
+│  │   → Connects via SSH to each node                     │    │
+│  │   → Uses bastion as jump host                         │    │
+│  │   → Configures nodes (OS, runtime, K8s)              │    │
+│  │   → Returns all output to your machine                │    │
+│  │ ✓ RUN FROM YOUR MACHINE                              │    │
+│  │   (Ansible SSH to EC2 nodes automatically)           │    │
+│  └────────────────────────────────────────────────────────┘    │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓ SSH
+          ┌──────────────────────────────────────────┐
+          │     AWS Bastion (Jump Host)              │
+          │     Optional - can be skipped            │
+          │     10.0.1.x (public subnet)             │
+          └──────────────────────────────────────────┘
+                              ↓ Internal SSH
+     ┌────────────────────────────────────────────────────┐
+     │           AWS Private Subnet                       │
+     │                                                    │
+     │  ┌──────────────┐  ┌──────────────┐               │
+     │  │ Master-1     │  │ Master-2     │ Master-3...   │
+     │  │ 10.0.10.10   │  │ 10.0.10.11   │               │
+     │  │ (no tools)   │  │ (no tools)   │               │
+     │  └──────────────┘  └──────────────┘               │
+     │                                                    │
+     │  ┌──────────────┐  ┌──────────────┐               │
+     │  │ Worker-1     │  │ Worker-2     │               │
+     │  │ 10.0.11.10   │  │ 10.0.11.11   │               │
+     │  │ (no tools)   │  │ (no tools)   │               │
+     │  └──────────────┘  └──────────────┘               │
+     │                                                    │
+     │  ┌──────────────────────────────────────────┐    │
+     │  │ HAProxy (Load Balancer)                  │    │
+     │  │ 10.0.10.50 → Masters on port 6443       │    │
+     │  │ (no tools needed)                        │    │
+     │  └──────────────────────────────────────────┘    │
+     │                                                    │
+     └────────────────────────────────────────────────────┘
+
+KEY POINT:
+✅ Your machine runs Terraform + Ansible
+✅ Ansible connects to EC2 nodes via SSH
+✅ EC2 nodes don't need Terraform or Ansible installed
+✅ You control everything from your laptop
+```
+
+---
+
+## 2. EXECUTION FLOW (Step by Step)
+
+```
+START HERE (Your Local Machine)
+│
+├─► 1. Install Tools (one-time)
+│   └─► terraform, ansible, awscli, jq
+│       Duration: 10 minutes
+│       Where: Your machine
+│
+├─► 2. Configure AWS Credentials (one-time)
+│   └─► aws configure
+│       Duration: 5 minutes
+│       Where: ~/.aws/credentials
+│
+├─► 3. Generate SSH Key (one-time)
+│   └─► ssh-keygen -t ed25519
+│       Duration: 1 minute
+│       Where: ~/.ssh/id_ed25519
+│
+├─► 4. Run Terraform Apply (each deployment)
+│   └─► terraform apply
+│       Duration: 5 minutes
+│       Where: AWS (provisions 7 EC2 instances)
+│       Output: IPs of all nodes
+│
+├─► 5. Export Terraform Outputs
+│   └─► terraform output -json > inventory/tf_outputs.json
+│       Duration: <1 minute
+│       Where: Your local filesystem
+│
+├─► 6. Generate Ansible Inventory
+│   └─► bash inventory/generate-inventory.sh
+│       Duration: <1 minute
+│       Where: Your local filesystem
+│
+└─► 7. Run Ansible Playbooks (each bootstrap)
+    │
+    ├─ playbook 01: Common OS Setup (5-10 min)
+    │  └─ Ansible → SSH to each node → Configure OS
+    │
+    ├─ playbook 02: HAProxy Setup (2-3 min)
+    │  └─ Ansible → SSH to HAProxy node → Configure load balancer
+    │
+    ├─ playbook 03: K8s Install (5-10 min)
+    │  └─ Ansible → SSH to all nodes → Install container + K8s
+    │
+    ├─ playbook 04: Cluster Init (5-15 min)
+    │  └─ Ansible → SSH to master-1 → kubeadm init + Calico
+    │
+    └─ playbook 05: Join Nodes (10-15 min)
+       └─ Ansible → SSH to all other nodes → Join cluster
+
+FINISH: Kubernetes cluster running, all nodes Ready
+
+Total Time: 40-60 minutes
+```
+
+---
+
+## 3. HOW ANSIBLE CONNECTS (SSH Flow)
+
+```
+Your Local Machine (running ansible-playbook)
+│
+├─ Ansible reads: inventory/hosts.yml
+│  │
+│  ├─ master-1: 10.0.10.10  (private IP)
+│  ├─ master-2: 10.0.10.11  (private IP)
+│  ├─ worker-1: 10.0.11.10  (private IP)
+│  └─ bastion: 10.0.1.x     (public IP)
+│
+├─ If bastion enabled:
+│  │
+│  └─► SSH Connection Path:
+│      Your Machine
+│         ↓ (public internet)
+│      AWS Bastion (10.0.1.x)
+│         ↓ (private network)
+│      Master/Worker (10.0.10.x / 10.0.11.x)
+│
+├─ If bastion disabled:
+│  │
+│  └─► Ansible uses:
+│      ansible_connection: local (for bastion)
+│      ProxyCommand: SSH through bastion
+│
+└─ On Each Node:
+   │
+   ├─ SSH connects as: ec2-user
+   ├─ Uses key: ~/.ssh/id_ed25519
+   ├─ Runs with sudo: ansible_become: yes
+   ├─ Root access: ansible_become_method: sudo
+   │
+   └─► Runs Tasks:
+       • Install packages (yum)
+       • Configure kernel
+       • Start services
+       • Wait for status
+       All output sent back to your terminal
+```
+
+---
+
+## 4. TERRAFORM FLOW
+
+```
+Your Local Machine
+│
+├─► $ terraform init
+│   └─► Initializes Terraform working directory
+│       Creates .terraform/ folder
+│       Downloads AWS provider
+│
+├─► $ terraform plan
+│   └─► Shows what WILL be created:
+│       • 1 VPC
+│       • 4 subnets (2 public, 2 private)
+│       • 1 IGW, 2 NAT Gateways
+│       • 7 EC2 instances
+│       • Security groups + IAM roles
+│
+├─► $ terraform apply
+│   └─► CREATES everything in AWS
+│       Provisions EC2 instances
+│       Configures networking
+│       Creates IAM roles
+│       Duration: 5 minutes
+│
+└─► $ terraform output -json > inventory/tf_outputs.json
+    └─► Exports:
+        • bastion_public_ip
+        • haproxy_private_ip
+        • master_private_ips (list)
+        • worker_private_ips (list)
+        All needed by Ansible
+```
+
+---
+
+## 5. ANSIBLE ROLES & TASKS FLOW
+
+```
+Your Machine: $ ansible-playbook playbooks/site.yml
+
+│
+├─► PLAY 1: Common OS Setup (01-common.yml)
+│   Hosts: all (every node)
+│   Tasks:
+│   ├─ Update packages
+│   ├─ Disable SELinux
+│   ├─ Disable swap
+│   ├─ Load kernel modules
+│   ├─ Configure sysctl
+│   ├─ Disable firewall
+│   └─ Reboot nodes
+│   Duration: 5-10 minutes
+│
+├─► PLAY 2: HAProxy Setup (02-haproxy.yml)
+│   Hosts: haproxy (single node)
+│   Tasks:
+│   ├─ Install HAProxy
+│   ├─ Render config from template
+│   ├─ Start service
+│   └─ Verify listening on 6443
+│   Duration: 2-3 minutes
+│
+├─► PLAY 3: Kubernetes Install (03-k8s-install.yml)
+│   Hosts: k8s_nodes (all nodes except bastion)
+│   Tasks:
+│   ├─ Add Kubernetes repo
+│   ├─ Install containerd
+│   ├─ Install runc
+│   ├─ Install CNI plugins
+│   ├─ Install kubeadm, kubelet, kubectl
+│   └─ Configure systemd cgroup driver
+│   Duration: 5-10 minutes
+│
+├─► PLAY 4: Cluster Init (04-cluster-init.yml)
+│   Hosts: masters (all 3, but only master-1 initializes)
+│   Conditional: when: is_first_master == true
+│   Tasks:
+│   ├─ kubeadm init (master-1 only)
+│   ├─ Wait for API server
+│   ├─ Install Calico CNI
+│   ├─ Fetch kubeconfig
+│   └─ Verify cluster Ready
+│   Duration: 5-15 minutes
+│
+└─► PLAY 5: Join Nodes (05-cluster-join.yml)
+    Hosts: k8s_nodes (but not master-1)
+    Serial: 2 (run 2 nodes at a time)
+    Tasks:
+    ├─ Get join token from master-1
+    ├─ For additional masters:
+    │  ├─ Join with certificate key
+    │  └─ Wait for node Ready
+    └─ For workers:
+       ├─ Join with bootstrap token
+       └─ Wait for node Ready
+    Duration: 10-15 minutes
+
+RESULT:
+✅ All 5 nodes Ready
+✅ All system pods Running
+✅ etcd cluster healthy
+✅ Kubernetes API responsive
+```
+
+---
+
+## 6. WHERE THINGS ARE STORED
+
+```
+Your Local Machine
+│
+├─ Terraform State
+│   ├─ Local: terraform.tfstate (dev environment only)
+│   └─ Remote: S3 bucket (qa/prod environments)
+│
+├─ Ansible Inventory
+│   ├─ inventory/hosts.yml (generated from terraform)
+│   └─ inventory/tf_outputs.json (terraform output)
+│
+├─ SSH Keys
+│   ├─ ~/.ssh/id_ed25519 (private - NEVER share)
+│   └─ ~/.ssh/id_ed25519.pub (public - copied to EC2)
+│
+├─ AWS Credentials
+│   └─ ~/.aws/credentials (keep secure!)
+│
+└─ Project Code
+    ├─ terraform/ (infrastructure code)
+    ├─ ansible/ (configuration code)
+    └─ docs/ (this documentation)
+
+
+AWS Account
+│
+├─ EC2 Instances
+│   ├─ 3 Masters
+│   ├─ 2 Workers
+│   ├─ 1 Bastion
+│   └─ 1 HAProxy
+│
+├─ VPC Networking
+│   ├─ VPC (10.0.0.0/16)
+│   ├─ 2 Public Subnets
+│   ├─ 2 Private Subnets
+│   ├─ NAT Gateways
+│   └─ Internet Gateway
+│
+├─ IAM Roles
+│   ├─ Master role (EC2 read, SSM Session Mgr)
+│   ├─ Worker role (EC2 read, SSM Session Mgr)
+│   ├─ Bastion role
+│   └─ HAProxy role
+│
+└─ Security Groups
+    ├─ Bastion SG
+    ├─ HAProxy SG
+    ├─ Master SG
+    ├─ Worker SG
+    └─ ALB SG (optional)
+
+
+Kubernetes Cluster (on EC2)
+│
+├─ Control Plane
+│   ├─ master-1: kube-apiserver, etcd, controller-mgr, scheduler
+│   ├─ master-2: kube-apiserver, etcd, controller-mgr, scheduler
+│   └─ master-3: kube-apiserver, etcd, controller-mgr, scheduler
+│
+├─ Worker Plane
+│   ├─ worker-1: kubelet, kube-proxy, containerd
+│   └─ worker-2: kubelet, kube-proxy, containerd
+│
+├─ Load Balancing
+│   └─ HAProxy: Routes 6443 to all masters
+│
+└─ Networking
+    ├─ Calico: CNI plugin
+    ├─ Pod CIDR: 192.168.0.0/16
+    └─ Service CIDR: 10.96.0.0/12
+```
+
+---
+
+## 7. WHAT YOU NEED ON YOUR MACHINE
+
+```
+Software:
+├─ terraform           ✅ REQUIRED
+├─ ansible             ✅ REQUIRED
+├─ aws-cli             ✅ REQUIRED
+├─ jq                  ✅ REQUIRED
+├─ kubectl             ⚠️  OPTIONAL (for verification only)
+├─ git                 ✅ REQUIRED (clone this repo)
+└─ ssh-keygen          ✅ Already on Mac/Linux
+
+Credentials/Keys:
+├─ AWS Access Key ID   ✅ REQUIRED
+├─ AWS Secret Key      ✅ REQUIRED
+├─ SSH Private Key     ✅ REQUIRED
+│  └─ ~/.ssh/id_ed25519 (ed25519 recommended)
+└─ SSH Public Key      ✅ REQUIRED
+   └─ ~/.ssh/id_ed25519.pub (uploaded to AWS)
+
+Configuration Files:
+├─ ~/.aws/credentials  ✅ REQUIRED
+├─ terraform.tfvars    ✅ REQUIRED
+├─ ansible.cfg         ✅ REQUIRED
+└─ inventory/hosts.yml ✅ GENERATED
+
+Storage:
+├─ 500MB   For this project
+├─ 5GB     For temporary files during build
+└─ Internet connection required
+```
+
+---
+
+## Quick Summary
+
+**Question**: Where does Ansible run?  
+**Answer**: YOUR LOCAL MACHINE (same place as Terraform)
+
+**Question**: Do EC2 nodes need Ansible?  
+**Answer**: NO. Ansible connects via SSH and configures them.
+
+**Question**: Do EC2 nodes need Terraform?  
+**Answer**: NO. Terraform is only for provisioning.
+
+**Question**: What if I lose my SSH key?  
+**Answer**: You'll need to terminate EC2 instances and create new SSH key.
+
+**Question**: Can I run this from a server instead of my laptop?  
+**Answer**: YES. Just install tools on that server instead.
+
+**Question**: Can I use AWS Bastion as Ansible machine?  
+**Answer**: YES. SSH to bastion and run Ansible there.
+        But recommended to run from your local machine.
+
+---
+
+See [docs/LOCAL_SETUP.md](LOCAL_SETUP.md) for step-by-step installation instructions.

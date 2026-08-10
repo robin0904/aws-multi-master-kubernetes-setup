@@ -1,0 +1,5 @@
+---
+# Cluster join defaults
+api_server_port: 6443
+node_type: worker
+is_first_master: false

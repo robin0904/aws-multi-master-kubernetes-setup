@@ -1,0 +1,132 @@
+---
+# =============================================================================
+# ansible/roles/common/tasks/main.yml
+# Common OS setup for all nodes — kernel config, swap, firewall, etc.
+# =============================================================================
+
+- name: Update system packages
+  yum:
+    name:
+      - kernel
+      - systemd
+      - filesystem
+    state: latest
+  register: yum_update
+  ignore_errors: yes
+
+- name: Install required packages
+  yum:
+    name:
+      - curl
+      - wget
+      - git
+      - net-tools
+      - vim
+      - jq
+      - yum-utils
+      - device-mapper-persistent-data
+      - lvm2
+      - openssl
+      - python3
+      - python3-pip
+    state: present
+  ignore_errors: yes
+
+- name: Disable SELinux
+  selinux:
+    state: disabled
+  register: selinux_change
+
+- name: Disable swap
+  block:
+    - name: Turn off swap
+      command: swapoff -a
+      changed_when: false
+
+    - name: Comment out swap in fstab
+      lineinfile:
+        path: /etc/fstab
+        regexp: '^[^#]*\s+swap\s+'
+        line: '# \g<0>'
+        backrefs: yes
+
+- name: Load required kernel modules
+  block:
+    - name: Create kernel modules config
+      copy:
+        dest: /etc/modules-load.d/k8s.conf
+        content: |
+          overlay
+          br_netfilter
+        mode: '0644'
+
+    - name: Load overlay module
+      modprobe:
+        name: overlay
+        state: present
+
+    - name: Load br_netfilter module
+      modprobe:
+        name: br_netfilter
+        state: present
+
+- name: Configure kernel parameters for Kubernetes
+  block:
+    - name: Create sysctl config for Kubernetes
+      copy:
+        dest: /etc/sysctl.d/99-kubernetes.conf
+        content: |
+          # Kubernetes kernel parameters
+          net.bridge.bridge-nf-call-iptables = 1
+          net.bridge.bridge-nf-call-ip6tables = 1
+          net.ipv4.ip_forward = 1
+          net.ipv4.conf.all.forwarding = 1
+          net.ipv6.conf.all.forwarding = 1
+          vm.overcommit_memory = 1
+          kernel.panic = 10
+          kernel.panic_on_oops = 1
+        mode: '0644'
+
+    - name: Apply sysctl settings
+      command: sysctl -p /etc/sysctl.d/99-kubernetes.conf
+      changed_when: false
+
+- name: Disable and stop firewalld
+  systemd:
+    name: firewalld
+    enabled: false
+    state: stopped
+  ignore_errors: yes
+
+- name: Configure network
+  block:
+    - name: Set hostname
+      hostname:
+        name: "{{ inventory_hostname }}"
+
+    - name: Update /etc/hosts
+      lineinfile:
+        path: /etc/hosts
+        line: "{{ ansible_host }} {{ inventory_hostname }}"
+        create: yes
+
+    - name: Ensure IPv4 forwarding is enabled
+      sysctl:
+        name: net.ipv4.conf.all.forwarding
+        value: '1'
+        state: present
+        sysctl_set: yes
+
+- name: Reboot if required
+  reboot:
+    msg: "Rebooting after system updates and kernel parameter changes"
+    connect_timeout: 5
+    reboot_timeout: 600
+    pre_reboot_delay: 0
+    post_reboot_delay: 30
+  when: yum_update.changed or selinux_change.changed
+
+- name: Wait for system to be ready
+  wait_for_connection:
+    delay: 10
+    timeout: 300

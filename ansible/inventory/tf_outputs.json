@@ -1,0 +1,102 @@
+{
+  "ami_id_used": {
+    "sensitive": false,
+    "type": "string",
+    "value": "ami-0d15e9052c94acb75"
+  },
+  "bastion_private_ip": {
+    "sensitive": false,
+    "type": "string",
+    "value": "10.0.1.232"
+  },
+  "bastion_public_ip": {
+    "sensitive": false,
+    "type": "string",
+    "value": "13.202.42.243"
+  },
+  "haproxy_private_ip": {
+    "sensitive": false,
+    "type": "string",
+    "value": "10.0.1.30"
+  },
+  "haproxy_public_ip": {
+    "sensitive": false,
+    "type": "string",
+    "value": "35.154.191.143"
+  },
+  "kubernetes_api_endpoint": {
+    "sensitive": false,
+    "type": "string",
+    "value": "35.154.191.143:6443"
+  },
+  "master_instance_ids": {
+    "sensitive": false,
+    "type": [
+      "tuple",
+      [
+        "string",
+        "string",
+        "string"
+      ]
+    ],
+    "value": [
+      "i-02316722726e0cc2f",
+      "i-0027204cceb75ab93",
+      "i-04740e66c8998c154"
+    ]
+  },
+  "master_private_ips": {
+    "sensitive": false,
+    "type": [
+      "tuple",
+      [
+        "string",
+        "string",
+        "string"
+      ]
+    ],
+    "value": [
+      "10.0.10.70",
+      "10.0.11.64",
+      "10.0.10.132"
+    ]
+  },
+  "ssh_key_name": {
+    "sensitive": false,
+    "type": "string",
+    "value": "dev-k8s-cluster-key"
+  },
+  "vpc_id": {
+    "sensitive": false,
+    "type": "string",
+    "value": "vpc-08f2a4907a8f17fe8"
+  },
+  "worker_instance_ids": {
+    "sensitive": false,
+    "type": [
+      "tuple",
+      [
+        "string",
+        "string"
+      ]
+    ],
+    "value": [
+      "i-062bbaad6dc759e85",
+      "i-0cae3820a72310375"
+    ]
+  },
+  "worker_private_ips": {
+    "sensitive": false,
+    "type": [
+      "tuple",
+      [
+        "string",
+        "string"
+      ]
+    ],
+    "value": [
+      "10.0.10.183",
+      "10.0.11.236"
+    ]
+  }
+}

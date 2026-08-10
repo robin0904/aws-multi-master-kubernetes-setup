@@ -32,6 +32,16 @@ output "haproxy_instance_profile_arn" {
   value       = aws_iam_instance_profile.haproxy.arn
 }
 
+output "bastion_instance_profile_name" {
+  description = "IAM instance profile name for the Bastion host (SSM Session Manager)."
+  value       = aws_iam_instance_profile.bastion.name
+}
+
+output "bastion_instance_profile_arn" {
+  description = "IAM instance profile ARN for the Bastion host."
+  value       = aws_iam_instance_profile.bastion.arn
+}
+
 output "master_role_arn" {
   description = "ARN of the master IAM role."
   value       = aws_iam_role.master.arn

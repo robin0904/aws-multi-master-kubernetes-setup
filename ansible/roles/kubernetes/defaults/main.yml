@@ -1,0 +1,6 @@
+---
+# Kubernetes role defaults
+kubernetes_version: "1.33"
+kubeadm_version: "1.33.1"
+kubelet_version: "1.33.1"
+kubectl_version: "1.33.1"

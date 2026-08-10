@@ -1,0 +1,9 @@
+---
+- name: restart systemd-resolved
+  systemd:
+    name: systemd-resolved
+    state: restarted
+
+- name: restart networking
+  command: systemctl restart network
+  changed_when: false

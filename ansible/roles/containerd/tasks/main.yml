@@ -1,0 +1,145 @@
+---
+# =============================================================================
+# ansible/roles/containerd/tasks/main.yml
+# Install and configure containerd container runtime
+# =============================================================================
+
+- name: Create containerd directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /opt/containerd
+    - /etc/containerd
+
+- name: Download containerd release
+  unarchive:
+    src: "https://github.com/containerd/containerd/releases/download/v{{ containerd_version }}/containerd-{{ containerd_version }}-linux-amd64.tar.gz"
+    dest: /opt/containerd
+    remote_src: yes
+
+- name: Copy containerd binary to PATH
+  copy:
+    src: "/opt/containerd/bin/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    mode: '0755'
+    remote_src: yes
+  loop:
+    - containerd
+    - containerd-shim
+    - containerd-shim-runc-v2
+    - ctr
+  ignore_errors: yes
+
+- name: Create containerd systemd service
+  copy:
+    dest: /etc/systemd/system/containerd.service
+    content: |
+      [Unit]
+      Description=containerd container runtime
+      After=network.target
+      Requires=containerd.socket
+
+      [Service]
+      Type=notify
+      ExecStart=/usr/local/bin/containerd
+      Restart=always
+      RestartSec=5
+      Delegate=yes
+      KillMode=process
+      OOMScoreAdjust=-999
+      LimitNOFILE=1048576
+      LimitNPROC=infinity
+
+      [Install]
+      WantedBy=multi-user.target
+    mode: '0644'
+  register: containerd_service
+
+- name: Create containerd socket service
+  copy:
+    dest: /etc/systemd/system/containerd.socket
+    content: |
+      [Unit]
+      Description=containerd socket
+      Before=containerd.service
+
+      [Socket]
+      ListenStream=%t/containerd/containerd.sock
+      SocketMode=0660
+      SocketUser=root
+      SocketGroup=root
+
+      [Install]
+      WantedBy=sockets.target
+    mode: '0644'
+  register: containerd_socket
+
+- name: Download runc
+  unarchive:
+    src: "https://github.com/opencontainers/runc/releases/download/v{{ runc_version }}/runc.amd64"
+    dest: /usr/local/bin
+    remote_src: yes
+    mode: '0755'
+  ignore_errors: yes
+
+- name: Install runc manually (fallback)
+  block:
+    - name: Download runc binary
+      get_url:
+        url: "https://github.com/opencontainers/runc/releases/download/v{{ runc_version }}/runc.amd64"
+        dest: /usr/local/bin/runc
+        mode: '0755'
+  when: ansible_failed_when is undefined
+
+- name: Create CNI directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /opt/cni/bin
+    - /etc/cni/net.d
+
+- name: Download CNI plugins
+  unarchive:
+    src: "https://github.com/containernetworking/plugins/releases/download/v{{ cni_plugins_version }}/cni-plugins-linux-amd64-v{{ cni_plugins_version }}.tgz"
+    dest: /opt/cni/bin
+    remote_src: yes
+
+- name: Generate containerd configuration
+  block:
+    - name: Generate default containerd config
+      shell: /usr/local/bin/containerd config default > {{ containerd_config_path }}
+      args:
+        creates: "{{ containerd_config_path }}"
+
+    - name: Update containerd config for systemd cgroup driver
+      lineinfile:
+        path: "{{ containerd_config_path }}"
+        regexp: '(\s+)SystemdCgroup = false'
+        line: '\1SystemdCgroup = true'
+        backrefs: yes
+
+    - name: Set containerd pause image
+      lineinfile:
+        path: "{{ containerd_config_path }}"
+        regexp: 'sandbox_image = .*'
+        line: '  sandbox_image = "registry.k8s.io/pause:3.9"'
+
+- name: Enable and start containerd
+  systemd:
+    name: containerd
+    enabled: yes
+    state: started
+    daemon_reload: yes
+
+- name: Verify containerd installation
+  command: /usr/local/bin/ctr version
+  register: ctr_version
+  changed_when: false
+
+- name: Print containerd version
+  debug:
+    msg: "{{ ctr_version.stdout }}"

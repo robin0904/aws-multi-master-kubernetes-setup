@@ -1,0 +1,5 @@
+---
+# Common role defaults
+disable_selinux: true
+disable_firewall: true
+enable_ipv4_forwarding: true

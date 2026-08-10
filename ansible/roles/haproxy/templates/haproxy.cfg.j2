@@ -1,0 +1,43 @@
+#jinja2: lstrip_blocks: True, trim_blocks: True
+# =============================================================================
+# HAProxy Configuration for Kubernetes API Load Balancing
+# Manages traffic to multiple master nodes
+# =============================================================================
+
+global
+    log stdout local0
+    log stdout local1 notice
+    user haproxy
+    group haproxy
+    daemon
+
+    # Performance tuning
+    maxconn 4096
+    tune.ssl.default-dh-param 2048
+
+defaults
+    log     global
+    mode    tcp
+    option  tcplog
+    option  dontlognull
+    timeout connect 5000
+    timeout client  50000
+    timeout server  50000
+
+# =============================================================================
+# Kubernetes API Server Load Balancing (TCP)
+# =============================================================================
+frontend kubernetes_api
+    bind {{ hostvars[inventory_hostname].get('haproxy_private_ip', '0.0.0.0') }}:{{ haproxy_port }}
+    mode tcp
+    option tcplog
+    default_backend k8s_masters
+
+backend k8s_masters
+    mode tcp
+    balance roundrobin
+    option tcp-check
+    tcp-check connect port {{ haproxy_port }}
+    {% for master_host in groups['masters'] %}
+    server {{ master_host }} {{ hostvars[master_host]['ansible_host'] }}:{{ haproxy_port }} check
+    {% endfor %}

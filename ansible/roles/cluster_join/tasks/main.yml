@@ -1,0 +1,91 @@
+---
+# =============================================================================
+# ansible/roles/cluster_join/tasks/main.yml
+# Join additional masters and worker nodes to the cluster
+# Runs after cluster_init completes on master-1
+# =============================================================================
+
+- name: Get join token from first master
+  block:
+    - name: Fetch join command from master-1
+      shell: "kubeadm token create --print-join-command"
+      register: join_command
+      delegate_to: "{{ groups['masters'][0] }}"
+      delegate_facts: false
+      changed_when: false
+
+    - name: Parse join command
+      set_fact:
+        join_command_full: "{{ join_command.stdout }}"
+        join_token: "{{ join_command.stdout | regex_search('--token\\s+([^\\s]+)') | regex_replace('--token\\s+', '') }}"
+        ca_cert_hash: "{{ join_command.stdout | regex_search('--discovery-token-ca-cert-hash\\s+([^\\s]+)') | regex_replace('--discovery-token-ca-cert-hash\\s+', '') }}"
+
+- name: Join additional master nodes
+  block:
+    - name: Fetch certificate key from first master
+      shell: "kubeadm init phase upload-certs --upload-certs --kubeconfig=/etc/kubernetes/admin.conf 2>/dev/null | tail -1"
+      register: cert_key
+      delegate_to: "{{ groups['masters'][0] }}"
+      delegate_facts: false
+      changed_when: false
+
+    - name: Create master join configuration
+      copy:
+        dest: /tmp/kubeadm-join-master.yml
+        content: |
+          apiVersion: kubeadm.k8s.io/v1beta3
+          kind: JoinConfiguration
+          controlPlane:
+            certificateKey: "{{ cert_key.stdout }}"
+          discovery:
+            bootstrapToken:
+              apiServerEndpoint: "{{ hostvars[groups['haproxy'][0]]['haproxy_private_ip'] }}:{{ api_server_port }}"
+              token: "{{ join_token }}"
+              caCertHashes:
+              - "{{ ca_cert_hash }}"
+          nodeRegistration:
+            name: "{{ inventory_hostname }}"
+
+    - name: Run kubeadm join for masters
+      command: "kubeadm join {{ hostvars[groups['haproxy'][0]]['haproxy_private_ip'] }}:{{ api_server_port }} --token {{ join_token }} --discovery-token-ca-cert-hash {{ ca_cert_hash }} --control-plane --certificate-key {{ cert_key.stdout }} --ignore-preflight-errors=NumCPU,Mem"
+      register: master_join_output
+      when: node_type == 'master' and not is_first_master
+
+    - name: Wait for master node to be ready
+      shell: "kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes {{ inventory_hostname }}"
+      register: master_ready
+      delegate_to: "{{ groups['masters'][0] }}"
+      delegate_facts: false
+      until: master_ready.rc == 0 and 'Ready' in master_ready.stdout
+      retries: 30
+      delay: 10
+      when: node_type == 'master' and not is_first_master
+
+  when: inventory_hostname != groups['masters'][0]
+
+- name: Join worker nodes
+  block:
+    - name: Run kubeadm join for workers
+      command: "kubeadm join {{ hostvars[groups['haproxy'][0]]['haproxy_private_ip'] }}:{{ api_server_port }} --token {{ join_token }} --discovery-token-ca-cert-hash {{ ca_cert_hash }} --ignore-preflight-errors=NumCPU,Mem"
+      register: worker_join_output
+      when: node_type == 'worker'
+
+    - name: Wait for worker node to be ready
+      shell: "kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes {{ inventory_hostname }}"
+      register: worker_ready
+      delegate_to: "{{ groups['masters'][0] }}"
+      delegate_facts: false
+      until: worker_ready.rc == 0 and 'Ready' in worker_ready.stdout
+      retries: 30
+      delay: 10
+      when: node_type == 'worker'
+
+  when: node_type == 'worker' or (node_type == 'master' and not is_first_master)
+
+- name: Print cluster join status
+  debug:
+    msg: |
+      Node joined successfully!
+      - Node name: {{ inventory_hostname }}
+      - Node type: {{ node_type }}
+      - Control plane: {{ hostvars[groups['haproxy'][0]]['haproxy_private_ip'] }}:{{ api_server_port }}

@@ -1,0 +1,18 @@
+---
+# =============================================================================
+# ansible/playbooks/01-common.yml
+# Step 1: Common OS setup for all nodes
+# Kernel config, swap, firewall, etc.
+#
+# Run: ansible-playbook playbooks/01-common.yml -i inventory/hosts.yml
+# =============================================================================
+
+- name: Common OS Setup
+  hosts: all
+  serial: 1  # Run one host at a time to minimize downtime
+  gather_facts: yes
+  roles:
+    - common
+  tags:
+    - common
+    - bootstrap

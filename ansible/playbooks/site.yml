@@ -1,0 +1,66 @@
+---
+# =============================================================================
+# ansible/playbooks/site.yml
+# Complete Kubernetes cluster setup — all steps in sequence
+#
+# Usage:
+#   Step 1: Generate inventory from Terraform outputs
+#     cd terraform/environments/dev
+#     terraform output -json > ../../ansible/inventory/tf_outputs.json
+#
+#   Step 2: Generate static hosts file
+#     cd ../../ansible/inventory
+#     bash generate-inventory.sh
+#
+#   Step 3: Run complete playbook
+#     cd ../../
+#     ansible-playbook playbooks/site.yml -i inventory/hosts.yml
+#
+# Or run individual steps:
+#     ansible-playbook playbooks/01-common.yml -i inventory/hosts.yml
+#     ansible-playbook playbooks/02-haproxy.yml -i inventory/hosts.yml
+#     ansible-playbook playbooks/03-k8s-install.yml -i inventory/hosts.yml
+#     ansible-playbook playbooks/04-cluster-init.yml -i inventory/hosts.yml
+#     ansible-playbook playbooks/05-cluster-join.yml -i inventory/hosts.yml
+# =============================================================================
+
+- name: Step 1 - Common OS Setup
+  import_playbook: 01-common.yml
+
+- name: Step 2 - Install HAProxy Load Balancer
+  import_playbook: 02-haproxy.yml
+
+- name: Step 3 - Install Kubernetes Components
+  import_playbook: 03-k8s-install.yml
+
+- name: Step 4 - Initialize Kubernetes Cluster
+  import_playbook: 04-cluster-init.yml
+
+- name: Step 5 - Join Additional Masters and Workers
+  import_playbook: 05-cluster-join.yml
+
+- name: Final Validation
+  hosts: masters[0]
+  gather_facts: no
+  tasks:
+    - name: Wait for all nodes to be Ready
+      shell: |
+        kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes
+      register: cluster_nodes
+      until: cluster_nodes.stdout | regex_findall('Ready') | length >= {{ groups['k8s_nodes'] | length }}
+      retries: 60
+      delay: 10
+
+    - name: Display cluster status
+      debug:
+        msg: |
+          ========================================
+          Kubernetes Cluster Ready!
+          ========================================
+          Nodes:
+          {{ cluster_nodes.stdout }}
+          
+          Next steps:
+          1. Copy kubeconfig: scp <bastion>:/home/ec2-user/kubeconfig ~/.kube/config
+          2. Verify: kubectl get nodes
+          3. Check pods: kubectl get pods -A

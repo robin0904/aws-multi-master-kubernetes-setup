@@ -63,11 +63,20 @@ resource "aws_security_group" "haproxy" {
     cidr_blocks = [var.api_access_cidr]
   }
 
-  # HAProxy stats page (optional — restrict in production)
+  # SSH from admin CIDR (for direct access + debugging)
+  ingress {
+    description = "SSH from admin CIDR"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [var.admin_cidr_block]
+  }
+
+  # HAProxy stats page — port 9000 to match haproxy.cfg.tpl
   ingress {
     description = "HAProxy stats page"
-    from_port   = 8404
-    to_port     = 8404
+    from_port   = 9000
+    to_port     = 9000
     protocol    = "tcp"
     cidr_blocks = [var.admin_cidr_block]
   }
@@ -246,6 +255,17 @@ resource "aws_security_group_rule" "masters_ssh_from_bastion" {
   source_security_group_id = aws_security_group.bastion[0].id
 }
 
+# SSH from admin CIDR to masters (direct access for debugging)
+resource "aws_security_group_rule" "masters_ssh_from_admin" {
+  type              = "ingress"
+  description       = "SSH from admin CIDR (direct access)"
+  from_port         = 22
+  to_port           = 22
+  protocol          = "tcp"
+  security_group_id = aws_security_group.masters.id
+  cidr_blocks       = [var.admin_cidr_block]
+}
+
 # -----------------------------------------------------------------------------
 # Workers Security Group
 # -----------------------------------------------------------------------------
@@ -332,4 +352,15 @@ resource "aws_security_group_rule" "workers_ssh_from_bastion" {
   protocol                 = "tcp"
   security_group_id        = aws_security_group.workers.id
   source_security_group_id = aws_security_group.bastion[0].id
+}
+
+# SSH from admin CIDR to workers (direct access for debugging)
+resource "aws_security_group_rule" "workers_ssh_from_admin" {
+  type              = "ingress"
+  description       = "SSH from admin CIDR (direct access)"
+  from_port         = 22
+  to_port           = 22
+  protocol          = "tcp"
+  security_group_id = aws_security_group.workers.id
+  cidr_blocks       = [var.admin_cidr_block]
 }

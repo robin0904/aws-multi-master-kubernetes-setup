@@ -1,0 +1,65 @@
+---
+# =============================================================================
+# ansible/roles/haproxy/tasks/main.yml
+# Install and configure HAProxy for Kubernetes API load balancing
+# =============================================================================
+
+- name: Install HAProxy
+  yum:
+    name: haproxy
+    state: present
+
+- name: Create HAProxy configuration directory
+  file:
+    path: /etc/haproxy
+    state: directory
+    mode: '0755'
+
+- name: Render HAProxy configuration
+  template:
+    src: haproxy.cfg.j2
+    dest: /etc/haproxy/haproxy.cfg
+    mode: '0644'
+    validate: "haproxy -f %s -c"
+  notify: reload haproxy
+
+- name: Ensure HAProxy log directory exists
+  file:
+    path: /var/log/haproxy
+    state: directory
+    mode: '0755'
+    owner: haproxy
+    group: haproxy
+
+- name: Configure rsyslog for HAProxy (optional)
+  copy:
+    dest: /etc/rsyslog.d/99-haproxy.conf
+    content: |
+      # HAProxy Logging
+      :programname, isequal, "haproxy" /var/log/haproxy/haproxy.log
+      & stop
+    mode: '0644'
+  notify: reload haproxy
+
+- name: Enable HAProxy service
+  systemd:
+    name: haproxy
+    enabled: yes
+    state: started
+    daemon_reload: yes
+
+- name: Wait for HAProxy to be ready
+  wait_for:
+    port: "{{ haproxy_port }}"
+    timeout: 10
+  ignore_errors: yes
+
+- name: Verify HAProxy is listening
+  shell: "ss -tlnp | grep {{ haproxy_port }}"
+  register: haproxy_listening
+  changed_when: false
+  ignore_errors: yes
+
+- name: Print HAProxy status
+  debug:
+    msg: "HAProxy listening on port {{ haproxy_port }}: {{ haproxy_listening.stdout }}"

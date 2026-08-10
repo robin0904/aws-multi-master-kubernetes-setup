@@ -1,0 +1,10 @@
+---
+- name: restart containerd
+  systemd:
+    name: containerd
+    state: restarted
+    daemon_reload: yes
+
+- name: reload containerd config
+  command: systemctl reload containerd
+  changed_when: false

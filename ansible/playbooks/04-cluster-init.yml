@@ -1,0 +1,22 @@
+---
+# =============================================================================
+# ansible/playbooks/04-cluster-init.yml
+# Step 4: Initialize Kubernetes cluster on first master
+# - Runs kubeadm init on master-1
+# - Installs Calico CNI
+# - Fetches kubeconfig
+#
+# Run: ansible-playbook playbooks/04-cluster-init.yml -i inventory/hosts.yml
+# =============================================================================
+
+- name: Initialize Kubernetes Cluster
+  hosts: masters
+  gather_facts: yes
+  tasks:
+    - name: Run cluster initialization on first master only
+      include_role:
+        name: cluster_init
+      when: is_first_master | bool
+  tags:
+    - cluster-init
+    - bootstrap

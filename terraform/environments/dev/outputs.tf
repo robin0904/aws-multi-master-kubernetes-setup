@@ -1,9 +1,8 @@
 # =============================================================================
 # environments/dev/outputs.tf
 #
-# Root-level outputs surfaced after terraform apply.
-# These values are consumed by Bash scripts (via terraform output -json)
-# and serve as the integration point between Terraform and the install scripts.
+# Infra outputs consumed by Ansible via:
+#   terraform output -json > ansible/inventory/tf_outputs.json
 # =============================================================================
 
 output "vpc_id" {
@@ -11,68 +10,53 @@ output "vpc_id" {
   value       = module.vpc.vpc_id
 }
 
-output "public_subnet_ids" {
-  description = "Public subnet IDs."
-  value       = module.vpc.public_subnet_ids
-}
-
-output "private_subnet_ids" {
-  description = "Private subnet IDs."
-  value       = module.vpc.private_subnet_ids
-}
-
 output "bastion_public_ip" {
-  description = "Public IP of the Bastion host."
+  description = "Bastion public IP — SSH entry point."
   value       = module.ec2.bastion_public_ip
 }
 
 output "bastion_private_ip" {
-  description = "Private IP of the Bastion host."
+  description = "Bastion private IP."
   value       = module.ec2.bastion_private_ip
 }
 
 output "haproxy_public_ip" {
-  description = "Public Elastic IP of the HAProxy instance."
+  description = "HAProxy public EIP — Kubernetes API endpoint from outside."
   value       = module.ec2.haproxy_public_ip
 }
 
 output "haproxy_private_ip" {
-  description = "Private IP of the HAProxy instance. Used by Kubernetes nodes to reach the API server."
+  description = "HAProxy private IP — used by k8s nodes as the API server endpoint."
   value       = module.ec2.haproxy_private_ip
 }
 
 output "master_private_ips" {
-  description = "Private IPs of control plane nodes."
+  description = "Private IPs of all control plane nodes."
   value       = module.ec2.master_private_ips
 }
 
 output "worker_private_ips" {
-  description = "Private IPs of worker nodes."
+  description = "Private IPs of all worker nodes."
   value       = module.ec2.worker_private_ips
 }
 
+output "master_instance_ids" {
+  description = "EC2 instance IDs of control plane nodes."
+  value       = module.ec2.master_instance_ids
+}
+
+output "worker_instance_ids" {
+  description = "EC2 instance IDs of worker nodes."
+  value       = module.ec2.worker_instance_ids
+}
+
 output "kubernetes_api_endpoint" {
-  description = "Kubernetes API endpoint (HAProxy or NLB)."
+  description = "Full Kubernetes API endpoint (HAProxy public IP or NLB DNS)."
   value = var.lb_type == "haproxy" ? (
     "${module.ec2.haproxy_public_ip}:6443"
   ) : (
     "${module.load_balancer.nlb_dns_name}:6443"
   )
-}
-
-output "ssm_path_prefix" {
-  description = "SSM parameter path prefix. Browse: /<cluster_name>/config/* and /<cluster_name>/bootstrap/*"
-  value       = module.ssm.ssm_path_prefix
-}
-
-output "haproxy_status_ssm_param" {
-  description = "SSM param to monitor HAProxy readiness."
-  value       = module.ssm.haproxy_status_param
-}
-
-output "master1_init_status_ssm_param" {
-  description = "SSM param to monitor master-1 init completion."
-  value       = module.ssm.master1_init_status_param
 }
 
 output "ssh_key_name" {
@@ -83,14 +67,4 @@ output "ssh_key_name" {
 output "ami_id_used" {
   description = "AMI ID used to launch all instances."
   value       = module.ec2.ami_id_used
-}
-
-output "master_instance_ids" {
-  description = "EC2 instance IDs for control plane nodes."
-  value       = module.ec2.master_instance_ids
-}
-
-output "worker_instance_ids" {
-  description = "EC2 instance IDs for worker nodes."
-  value       = module.ec2.worker_instance_ids
 }

@@ -1,0 +1,6 @@
+---
+# Containerd role defaults
+containerd_version: "1.7.23"
+runc_version: "1.2.3"
+cni_plugins_version: "1.6.0"
+containerd_config_path: "/etc/containerd/config.toml"

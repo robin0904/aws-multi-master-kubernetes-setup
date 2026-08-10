@@ -1,0 +1,5 @@
+---
+# HAProxy role defaults
+haproxy_port: 6443
+haproxy_mode: tcp
+haproxy_balance: roundrobin

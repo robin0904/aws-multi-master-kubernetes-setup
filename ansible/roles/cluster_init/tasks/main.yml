@@ -1,0 +1,112 @@
+---
+# =============================================================================
+# ansible/roles/cluster_init/tasks/main.yml
+# Initialize Kubernetes cluster on first master node
+# Runs ONLY on master-1 (controlled via playbook with when: is_first_master)
+# =============================================================================
+
+- name: Check if cluster already initialized
+  stat:
+    path: /etc/kubernetes/admin.conf
+  register: cluster_initialized
+
+- name: Initialize Kubernetes cluster
+  block:
+    - name: Create kubeadm init configuration
+      copy:
+        dest: /tmp/kubeadm-init.yml
+        content: |
+          apiVersion: kubeadm.k8s.io/v1beta3
+          kind: InitConfiguration
+          bootstrapTokens:
+          - token: "{{ hostvars[inventory_hostname]['bootstrap_token'] | default('123456.1234567890abcdef') }}"
+            ttl: 24h
+          ---
+          apiVersion: kubeadm.k8s.io/v1beta3
+          kind: ClusterConfiguration
+          kubernetesVersion: v{{ kubernetes_version }}
+          controlPlaneEndpoint: "{{ hostvars[groups['haproxy'][0]]['haproxy_private_ip'] }}:{{ api_server_port }}"
+          networking:
+            podSubnet: "{{ pod_cidr }}"
+            serviceSubnet: "{{ service_cidr }}"
+          apiServer:
+            extraArgs:
+              bind-address: "0.0.0.0"
+          ---
+          apiVersion: kubelet.config.k8s.io/v1beta1
+          kind: KubeletConfiguration
+          cgroupDriver: systemd
+          serverTLSBootstrap: true
+
+    - name: Run kubeadm init
+      command: "kubeadm init --config=/tmp/kubeadm-init.yml --ignore-preflight-errors=NumCPU,Mem"
+      register: kubeadm_init_output
+
+    - name: Save kubeadm init output
+      copy:
+        content: "{{ kubeadm_init_output.stdout }}"
+        dest: /tmp/kubeadm-init-output.log
+
+    - name: Create .kube directory
+      file:
+        path: /root/.kube
+        state: directory
+        mode: '0755'
+
+    - name: Copy kubeconfig to root home
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /root/.kube/config
+        remote_src: yes
+        mode: '0600'
+
+    - name: Wait for API server to be ready
+      shell: "kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes"
+      register: api_ready
+      until: api_ready.rc == 0
+      retries: 30
+      delay: 10
+
+  when: not cluster_initialized.stat.exists
+
+- name: Install Calico CNI
+  block:
+    - name: Download Calico manifest (simpler version without operator)
+      get_url:
+        url: "https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/calico.yaml"
+        dest: /tmp/calico.yaml
+
+    - name: Apply Calico CNI
+      shell: "kubectl --kubeconfig=/etc/kubernetes/admin.conf apply -f /tmp/calico.yaml --validate=false"
+      register: calico_apply
+      changed_when: "'created' in calico_apply.stdout or 'configured' in calico_apply.stdout"
+      retries: 5
+      delay: 10
+      until: calico_apply.rc == 0
+      ignore_errors: yes
+
+    - name: Wait for Calico pods to be ready
+      shell: "kubectl --kubeconfig=/etc/kubernetes/admin.conf get daemonset -n calico-system calico-node -o jsonpath='{.status.numberReady}' 2>/dev/null | grep -q '[0-9]' && echo 'ready'"
+      register: calico_ready
+      until: calico_ready.rc == 0
+      retries: 30
+      delay: 10
+      ignore_errors: yes
+
+- name: Fetch kubeconfig to local machine
+  fetch:
+    src: /etc/kubernetes/admin.conf
+    dest: "{{ playbook_dir }}/kubeconfig"
+    flat: yes
+  ignore_errors: yes
+
+- name: Print cluster initialization status
+  debug:
+    msg: |
+      Kubernetes cluster initialized successfully!
+      - API endpoint: https://{{ hostvars[groups['haproxy'][0]]['haproxy_private_ip'] }}:{{ api_server_port }}
+      - Pod CIDR: {{ pod_cidr }}
+      - Service CIDR: {{ service_cidr }}
+      - CNI: Calico {{ calico_version }}
+      
+      Kubeconfig saved to: {{ playbook_dir }}/kubeconfig
