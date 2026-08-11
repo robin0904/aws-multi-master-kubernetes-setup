@@ -7,27 +7,27 @@
   "bastion_private_ip": {
     "sensitive": false,
     "type": "string",
-    "value": "10.0.1.232"
+    "value": "10.0.1.198"
   },
   "bastion_public_ip": {
     "sensitive": false,
     "type": "string",
-    "value": "13.202.42.243"
+    "value": "52.66.182.10"
   },
   "haproxy_private_ip": {
     "sensitive": false,
     "type": "string",
-    "value": "10.0.1.30"
+    "value": "10.0.1.51"
   },
   "haproxy_public_ip": {
     "sensitive": false,
     "type": "string",
-    "value": "35.154.191.143"
+    "value": "15.207.246.224"
   },
   "kubernetes_api_endpoint": {
     "sensitive": false,
     "type": "string",
-    "value": "35.154.191.143:6443"
+    "value": "15.207.246.224:6443"
   },
   "master_instance_ids": {
     "sensitive": false,
@@ -40,9 +40,9 @@
       ]
     ],
     "value": [
-      "i-02316722726e0cc2f",
-      "i-0027204cceb75ab93",
-      "i-04740e66c8998c154"
+      "i-048be156eaf7ec3a9",
+      "i-0d1ca8d41da224c19",
+      "i-0947ea3dbf164990c"
     ]
   },
   "master_private_ips": {
@@ -56,9 +56,9 @@
       ]
     ],
     "value": [
-      "10.0.10.70",
-      "10.0.11.64",
-      "10.0.10.132"
+      "10.0.10.75",
+      "10.0.11.49",
+      "10.0.10.135"
     ]
   },
   "ssh_key_name": {
@@ -69,7 +69,7 @@
   "vpc_id": {
     "sensitive": false,
     "type": "string",
-    "value": "vpc-08f2a4907a8f17fe8"
+    "value": "vpc-0fefd168b74869ad9"
   },
   "worker_instance_ids": {
     "sensitive": false,
@@ -81,8 +81,8 @@
       ]
     ],
     "value": [
-      "i-062bbaad6dc759e85",
-      "i-0cae3820a72310375"
+      "i-014e49bd38a3e2b90",
+      "i-058a9b76e76591b4b"
     ]
   },
   "worker_private_ips": {
@@ -95,8 +95,8 @@
       ]
     ],
     "value": [
-      "10.0.10.183",
-      "10.0.11.236"
+      "10.0.10.201",
+      "10.0.11.4"
     ]
   }
 }

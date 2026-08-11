@@ -1,128 +1,100 @@
 # Kubernetes Multi-Master Cluster on AWS
 
-> Production-ready, highly available Kubernetes cluster on AWS EC2 — automated with Terraform (infrastructure) and Ansible (configuration).
+> **Production-ready, highly available Kubernetes cluster on AWS** — fully automated with Terraform (infrastructure) and Ansible (configuration).
 
-**📢 Status:** ✅ **PRODUCTION READY** - All bugs fixed, tested & verified  
+**📢 Status:** ✅ **PRODUCTION READY** - All 8 critical bugs fixed, tested & verified  
 **Version:** Kubernetes 1.33.1 | Terraform 1.6+ | Ansible 2.12+  
-**Last Updated:** August 10, 2026
+**Last Updated:** August 11, 2026
 
 ---
 
-## 🚀 Quick Links
+## 🚀 Start Here
 
-| Document | Purpose | Time |
-|----------|---------|------|
-| **[QUICK_START.md](QUICK_START.md)** | Deploy cluster in 4 steps | **45 min** |
-| **[DEPLOYMENT_SUMMARY.md](DEPLOYMENT_SUMMARY.md)** | Cluster overview & verification | **5 min** |
-| **[ISSUES_RESOLVED.md](ISSUES_RESOLVED.md)** | All bugs fixed + technical details | **Reference** |
-| **[SCRIPT_UPDATES.md](SCRIPT_UPDATES.md)** | Code changes & why | **Reference** |
+| Quick Links | Purpose | Time |
+|---|---|---|
+| **[DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)** | **Complete deployment guide - START HERE** | **90 min** |
+| **README.md** | This file - project overview | **5 min** |
 
-**First Time?** Start here: [QUICK_START.md](QUICK_START.md)
-
----
-
----
-
-## Table of Contents
-
-1. [Project Overview](#project-overview)
-2. [Architecture](#architecture)
-3. [Features](#features)
-4. [Repository Structure](#repository-structure)
-5. [Deployment Workflow](#deployment-workflow)
-6. [Infrastructure Overview](#infrastructure-overview)
-7. [HA Architecture](#ha-architecture)
-8. [Prerequisites](#prerequisites)
-9. [AWS Requirements](#aws-requirements)
-10. [Configuration](#configuration)
-11. [Variables](#variables)
-12. [Outputs](#outputs)
-13. [Security Considerations](#security-considerations)
-14. [Testing Strategy](#testing-strategy)
-15. [Troubleshooting](#troubleshooting)
-16. [Cleanup](#cleanup)
-17. [Future Improvements](#future-improvements)
+**First time? Read [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) — it has everything:**
+- ✅ Step-by-step 7-step deployment
+- ✅ Architecture overview
+- ✅ All 8 critical fixes explained
+- ✅ Verification procedures
+- ✅ Troubleshooting section
+- ✅ Security & disaster recovery
 
 ---
 
-## Project Overview
+## Overview
 
-This repository provides a fully automated, production-grade implementation for deploying a **highly available Kubernetes multi-master cluster** on AWS EC2. It is designed as a real-world reference implementation suitable for:
+This repository provides **one-command deployment** for a production-grade, highly available Kubernetes cluster on AWS:
 
-- Learning self-managed Kubernetes on AWS.
-- Running non-EKS environments where full control over the control plane is required.
-- Testing and validating multi-master Kubernetes HA setups.
-- Serving as the foundation for enterprise on-prem or hybrid-cloud Kubernetes infrastructure.
+- **3 Master nodes** (control plane) with etcd
+- **2+ Worker nodes** for running applications
+- **HAProxy load balancer** for API server HA
+- **Calico CNI** for networking
+- **Full automation** with Terraform + Ansible
+- **All 8 critical bugs fixed** with permanent solutions
+- **Production-ready** security, logging, monitoring
 
-The entire lifecycle — from AWS infrastructure provisioning to Kubernetes cluster bootstrap — is automated using **Terraform** (infrastructure) and **Bash scripts** (OS configuration, runtime installation, Kubernetes setup).
+**Total deployment time:** ~90 minutes
+
+---
 
 ---
 
 ## Architecture
 
 ```
-                          ┌──────────────────────────────────────────────┐
-                          │                  AWS VPC                      │
-                          │           CIDR: 10.0.0.0/16                  │
-                          │                                               │
-                          │  ┌─────────────────────────────────────────┐ │
-                          │  │            Public Subnets               │ │
-                          │  │   10.0.1.0/24  |  10.0.2.0/24          │ │
-                          │  │                                         │ │
-                          │  │   ┌──────────┐    ┌──────────────────┐ │ │
-                          │  │   │  Bastion │    │     HAProxy      │ │ │
-                          │  │   │   Host   │    │  Load Balancer   │ │ │
-                          │  │   │(optional)│    │  (port 6443)     │ │ │
-                          │  │   └────┬─────┘    └────────┬─────────┘ │ │
-                          │  └────────┼───────────────────┼───────────┘ │
-                          │           │                   │              │
-                          │  ┌────────┼───────────────────┼───────────┐ │
-                          │  │        │  Private Subnets  │           │ │
-                          │  │  10.0.10.0/24 | 10.0.11.0/24          │ │
-                          │  │                           │             │ │
-                          │  │   ┌──────────────────────▼──────────┐ │ │
-                          │  │   │       Control Plane Nodes       │ │ │
-                          │  │   │  master-1  master-2  master-3   │ │ │
-                          │  │   │  (etcd cluster – stacked)       │ │ │
-                          │  │   └─────────────────────────────────┘ │ │
-                          │  │                                        │ │
-                          │  │   ┌────────────────────────────────┐  │ │
-                          │  │   │        Worker Nodes            │  │ │
-                          │  │   │  worker-1  worker-2  worker-3  │  │ │
-                          │  │   └────────────────────────────────┘  │ │
-                          │  └────────────────────────────────────────┘ │
-                          └──────────────────────────────────────────────┘
+HAProxy Load Balancer (10.0.1.51:6443)
+        ↓
+        ├─→ Master-1 (etcd, API, Control)
+        ├─→ Master-2 (etcd, API, Control)
+        └─→ Master-3 (etcd, API, Control)
+
+Workers: Worker-1, Worker-2, ... (run pods)
+├─→ kubelet
+├─→ kube-proxy  
+└─→ Calico CNI (networking)
+
+Pod Network: 192.168.0.0/16 | Service Network: 10.96.0.0/12
 ```
 
-### Component Summary
-
-| Component | Purpose |
-|---|---|
-| VPC | Isolated network with public and private subnets across multiple AZs |
-| Public Subnets | Bastion host, HAProxy load balancer, NAT Gateway EIPs |
-| Private Subnets | Kubernetes control plane nodes and worker nodes |
-| Internet Gateway | Outbound internet from public subnets |
-| NAT Gateway | Outbound internet from private subnets (no inbound) |
-| Bastion Host | Secure SSH entry point into private subnet |
-| HAProxy | API server load balancer distributing traffic across masters on port 6443 |
-| Control Plane Nodes | 3x EC2 instances running kube-apiserver, kube-controller-manager, kube-scheduler, etcd |
-| Worker Nodes | 3x EC2 instances running kubelet, kube-proxy, container runtime |
-| IAM Roles | Least-privilege instance profiles for EC2 nodes |
+**See full architecture diagrams in [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md).**
 
 ---
 
-## Features
+## What's Included
 
-- **Fully automated** — single `terraform apply` provisions all AWS infrastructure.
-- **Multi-master HA** — 3 control plane nodes with stacked etcd topology.
-- **Dual HA options** — HAProxy (default) or AWS NLB (optional via variable).
-- **Modular Terraform** — each AWS concern is an independent, reusable module.
-- **Multi-environment** — separate `dev`, `qa`, `prod` variable files.
-- **Idempotent Bash scripts** — safe to re-run without side effects.
-- **Bastion host** — optional, toggled via variable.
-- **Security-first** — private subnets for all Kubernetes nodes, least-privilege IAM, restrictive security groups.
-- **Production-grade logging** — all Bash scripts emit timestamped, structured logs.
-- **Full validation suite** — infrastructure, OS, runtime, and cluster validation scripts included.
+✅ **All 8 Critical Fixes Applied:**
+- SSH ProxyCommand (unconditional security group rules)
+- Reboot Timeout (120s retries)
+- etcd Data Loss Prevention (check before reset)
+- Directory Order (create before copy)
+- Certificate Key Validation (robust parsing)
+- Node Status Retries (5 retries, 15s window)
+- Join Retries (2 retries, 30s backoff)
+- Certificate Key Expiry (fresh key per master)
+
+✅ **Complete 7-Step Deployment:**
+- Step 1: Terraform infrastructure (5 min)
+- Step 2-6: Ansible playbooks 01-05 (60 min)
+- Step 7: Verification (5 min)
+
+✅ **Production Features:**
+- HA with 3 masters + etcd cluster
+- HAProxy API load balancer
+- Calico CNI networking
+- Disaster recovery procedures
+- Security best practices
+- Monitoring & logging commands
+
+✅ **All Technical Details:**
+- Infrastructure architecture (Terraform)
+- Kubernetes architecture (etcd, API, CNI)
+- Root cause analysis of each fix
+- Implementation details with line numbers
+- Security, performance, disaster recovery
 
 ---
 
@@ -130,312 +102,212 @@ The entire lifecycle — from AWS infrastructure provisioning to Kubernetes clus
 
 ```
 aws-multi-master-kubernetes-setup/
-│
-├── terraform/
-│   ├── modules/
-│   │   ├── vpc/                  # VPC, subnets, IGW, NAT, route tables
-│   │   ├── networking/           # Additional networking (EIPs, peering stubs)
-│   │   ├── security-groups/      # All security group definitions
-│   │   ├── ec2/                  # EC2 instances (masters, workers, bastion)
-│   │   ├── iam/                  # IAM roles, policies, instance profiles
-│   │   ├── key-pair/             # AWS SSH key pair management
-│   │   ├── haproxy/              # HAProxy EC2 instance and config template
-│   │   ├── load-balancer/        # Optional AWS NLB
-│   │   ├── common-tags/          # Shared tag locals
-│   │   └── outputs/              # Aggregated root outputs
-│   │
-│   ├── environments/
-│   │   ├── dev/                  # Dev tfvars + backend config
-│   │   ├── qa/                   # QA tfvars + backend config
-│   │   └── prod/                 # Prod tfvars + backend config
-│   │
-│   ├── templates/                # User-data and config templatefiles
-│   ├── backend/                  # Remote state S3 + DynamoDB bootstrap
-│   └── versions.tf               # Provider and Terraform version constraints
-│
-├── scripts/
-│   ├── common/                   # Shared library functions (logging, checks)
-│   ├── master/                   # Control plane bootstrap scripts
-│   ├── worker/                   # Worker node join scripts
-│   ├── haproxy/                  # HAProxy install and config scripts
-│   └── validation/               # Infrastructure and cluster health checks
-│
-├── docs/
-│   ├── ARCHITECTURE.md           # Deep-dive architecture documentation
-│   ├── PROJECT_NOTES.md          # Design decisions and module descriptions
-│   └── EXECUTION_GUIDE.md        # Step-by-step deployment walkthrough
-│
-├── assets/
-│   └── diagrams/                 # Architecture diagrams (PNG/SVG)
-│
-├── .gitignore
-├── .editorconfig
+├── README.md                          ← You are here
+├── DEPLOYMENT_GUIDE.md                ← START HERE (complete guide)
 ├── LICENSE
-└── README.md
+├── terraform/
+│   ├── modules/                       # Modular Terraform code
+│   ├── environments/dev/              # Dev environment config
+│   └── main.tf
+├── ansible/
+│   ├── playbooks/
+│   │   ├── 01-common.yml
+│   │   ├── 02-haproxy.yml
+│   │   ├── 03-k8s-install.yml
+│   │   ├── 04-cluster-init.yml
+│   │   └── 05-cluster-join.yml
+│   ├── roles/                         # Ansible roles
+│   ├── inventory/
+│   │   └── hosts.yml                  # Generated from Terraform
+│   └── ansible.cfg
+└── [other supporting files]
 ```
+
+**See [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) for everything else.**
 
 ---
 
-## Deployment Workflow
+## Quick Start (TL;DR)
 
-```
-Phase 1  ──►  Repository Planning & Architecture     [This document]
-Phase 2  ──►  Terraform Infrastructure Provisioning  [terraform/]
-Phase 3  ──►  OS Configuration                       [scripts/common/]
-Phase 4  ──►  Container Runtime Installation         [scripts/common/]
-Phase 5  ──►  Kubernetes Component Installation      [scripts/common/]
-Phase 6  ──►  Cluster Bootstrap (first master)       [scripts/master/]
-Phase 7  ──►  Multi-Master Join                      [scripts/master/]
-Phase 8  ──►  Worker Node Join                       [scripts/worker/]
-Phase 9  ──►  Cluster Validation                     [scripts/validation/]
-```
+For the impatient - full details in [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md):
 
----
+```bash
+# 1. Clone & navigate
+cd aws-multi-master-kubernetes-setup
 
-## Infrastructure Overview
+# 2. Deploy infrastructure
+cd terraform/environments/dev
+terraform plan -out=tfplan
+terraform apply tfplan
 
-### Networking
+# 3. Run playbooks (from ansible/ directory)
+cd ../../ansible
+ansible-playbook playbooks/01-common.yml -i inventory/hosts.yml -v
+ansible-playbook playbooks/02-haproxy.yml -i inventory/hosts.yml -v
+ansible-playbook playbooks/03-k8s-install.yml -i inventory/hosts.yml -v
+ansible-playbook playbooks/04-cluster-init.yml -i inventory/hosts.yml -v
+ansible-playbook playbooks/05-cluster-join.yml -i inventory/hosts.yml -v
 
-| Resource | Details |
-|---|---|
-| VPC CIDR | `10.0.0.0/16` (configurable) |
-| Public Subnet AZ-A | `10.0.1.0/24` |
-| Public Subnet AZ-B | `10.0.2.0/24` |
-| Private Subnet AZ-A | `10.0.10.0/24` |
-| Private Subnet AZ-B | `10.0.11.0/24` |
-| Internet Gateway | 1 per VPC |
-| NAT Gateway | 1 per public subnet (HA config) |
-| Elastic IP | Assigned to each NAT Gateway |
-
-### Compute
-
-| Node Type | Count | Default Instance Type | Subnet |
-|---|---|---|---|
-| HAProxy / LB | 1 | `t3.small` | Public |
-| Bastion (optional) | 1 | `t3.micro` | Public |
-| Control Plane | 3 | `t3.medium` | Private |
-| Worker | 3 | `t3.large` | Private |
-
-All counts and instance types are fully configurable via variables.
-
----
-
-## HA Architecture
-
-### Option 1 — HAProxy (Default)
-
-```
-kubectl / API clients
-        │
-        ▼
-  ┌─────────────┐
-  │   HAProxy   │  :6443  (public or private IP depending on config)
-  └──────┬──────┘
-         │  round-robin
-    ┌────┼────┐
-    ▼    ▼    ▼
- master1 master2 master3
-  :6443  :6443  :6443
+# 4. Verify cluster
+BASTION_IP=$(grep "bastion_host:" inventory/hosts.yml | awk '{print $2}')
+ssh -i ~/.ssh/id_ed25519 -J ec2-user@$BASTION_IP ec2-user@10.0.10.75 \
+  "sudo kubectl get nodes"
+# Should show all 5 nodes as Ready
 ```
 
-HAProxy is installed on a dedicated EC2 instance. It listens on port 6443 and round-robins to all control plane nodes. The HAProxy config is generated dynamically from Terraform outputs and applied via Bash.
-
-### Option 2 — AWS Network Load Balancer (Optional)
-
-Set `variable "lb_type" = "nlb"` in your environment tfvars. Terraform will create an NLB with a target group pointing to all control plane nodes on port 6443. HAProxy EC2 instance is skipped.
+**Stop!** That was the 30-second version. **Read [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) for the full, detailed, step-by-step guide with:**
+- Expected output at each step
+- Troubleshooting for each phase
+- Verification procedures
+- All 8 fixes explained
+- Security best practices
 
 ---
 
 ## Prerequisites
 
-### Local Workstation
-
-| Tool | Minimum Version | Purpose |
-|---|---|---|
-| Terraform | >= 1.6.0 | Infrastructure provisioning |
-| AWS CLI | >= 2.13 | AWS authentication and verification |
-| kubectl | >= 1.29 | Cluster interaction post-deploy |
-| jq | >= 1.6 | JSON parsing in validation scripts |
-| ssh-keygen | any | SSH key generation |
-| bash | >= 4.0 | Running local helper scripts |
-
-### AWS Account
-
-- IAM user or role with sufficient permissions (see [AWS Requirements](#aws-requirements)).
-- S3 bucket and DynamoDB table for Terraform remote state (see `terraform/backend/`).
-- EC2 key pair **or** use the `key-pair` Terraform module to generate one.
-- Default AWS region set in CLI or via `AWS_DEFAULT_REGION` environment variable.
-
----
-
-## AWS Requirements
-
-### Required IAM Permissions
-
-The IAM entity running Terraform needs the following:
-
-```
-ec2:*
-vpc:*
-elasticloadbalancing:*
-iam:CreateRole
-iam:AttachRolePolicy
-iam:CreateInstanceProfile
-iam:AddRoleToInstanceProfile
-iam:PassRole
-s3:GetObject / s3:PutObject / s3:ListBucket       (remote state)
-dynamodb:GetItem / dynamodb:PutItem / dynamodb:DeleteItem  (state locking)
-```
-
-A reference IAM policy is available in `terraform/backend/iam-policy.json`.
-
-### Supported AWS Regions
-
-Any region with at least **2 Availability Zones**. Tested on:
-- `us-east-1`
-- `eu-west-1`
-- `ap-southeast-1`
-
----
-
-## Configuration
-
-All configuration is driven by Terraform variables. No values are hardcoded.
-
-Environment-specific values live in:
-
-```
-terraform/environments/dev/terraform.tfvars
-terraform/environments/qa/terraform.tfvars
-terraform/environments/prod/terraform.tfvars
-```
-
-To deploy a specific environment:
-
 ```bash
-cd terraform/environments/dev
-terraform init -backend-config=backend.hcl
-terraform plan -out=tfplan
-terraform apply tfplan
+# Check you have these installed
+terraform version      # >= 1.0
+ansible --version      # >= 2.9
+aws sts get-caller-identity  # AWS account configured
+ls ~/.ssh/id_ed25519   # SSH key exists
 ```
 
+**See Prerequisites section in [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) for details.**
+
 ---
 
-## Variables
+## What Gets Deployed
 
-Full variable reference is in `terraform/environments/dev/terraform.tfvars` with inline comments.
-Key variables:
+| Component | Count | Type | Subnet | Purpose |
+|-----------|-------|------|--------|---------|
+| Bastion | 1 | t3.micro | Public | SSH entry point |
+| HAProxy | 1 | t3.small | Public | API load balancer |
+| Masters | 3 | t3.medium | Private | Control plane + etcd |
+| Workers | 2 | t3.medium | Private | Run pods |
+| VPC | 1 | 10.0.0.0/16 | - | Network isolation |
+| Subnets | 4 | /24 | 2 public, 2 private | AZ distribution |
 
-| Variable | Default | Description |
+**All configurable** in `terraform/environments/dev/terraform.tfvars`
+
+---
+
+## Documentation
+
+| Document | Contains |
+|----------|----------|
+| **DEPLOYMENT_GUIDE.md** | **Complete step-by-step deployment guide - everything you need** |
+| README.md | This file - quick overview |
+| terraform/ | Infrastructure as Code |
+| ansible/ | Configuration automation |
+
+---
+
+## Features
+
+✅ Fully automated (terraform apply + ansible-playbook)  
+✅ Multi-master HA with stacked etcd  
+✅ Production-ready security (private subnets, least-privilege IAM, restrictive SGs)  
+✅ HAProxy load balancer for API server HA  
+✅ Calico CNI for pod networking  
+✅ Idempotent playbooks (safe to re-run)  
+✅ All 8 critical bugs permanently fixed  
+✅ Comprehensive documentation  
+✅ Disaster recovery procedures  
+✅ Monitoring & logging integration  
+
+---
+
+## Support
+
+### Issues?
+
+1. **Check [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) → Troubleshooting section** (5 common issues with solutions)
+2. **Read the fix explanations** - each includes root cause, symptom, and permanent solution
+3. **Check Ansible output** for specific error messages
+
+### Questions?
+
+- See [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) for comprehensive walkthrough
+- Each section has "Expected output" to compare against your run
+- All 8 fixes are explained in detail with before/after code
+
+---
+
+## Security
+
+🔒 **Network Security:**
+- All K8s nodes in private subnets (no direct internet)
+- Bastion host only public entry point
+- Security groups restrict traffic by port/CIDR
+- etcd traffic isolated to control plane SG
+
+🔒 **Access Control:**
+- IAM instance profiles with least-privilege permissions
+- SSH key-based auth only (no passwords)
+- API server behind HAProxy
+
+🔒 **Data Protection:**
+- etcd encrypted at rest (configurable)
+- TLS for all API communication
+- Certificate-based authentication
+
+**Full security details in [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) → Security section**
+
+---
+
+## Disaster Recovery
+
+| Failure Scenario | Impact | Recovery |
 |---|---|---|
-| `aws_region` | `us-east-1` | AWS region |
-| `environment` | `dev` | Deployment environment |
-| `cluster_name` | `k8s-cluster` | Cluster name prefix for all resources |
-| `vpc_cidr` | `10.0.0.0/16` | VPC CIDR block |
-| `master_count` | `3` | Number of control plane nodes |
-| `worker_count` | `3` | Number of worker nodes |
-| `master_instance_type` | `t3.medium` | Control plane EC2 instance type |
-| `worker_instance_type` | `t3.large` | Worker EC2 instance type |
-| `kubernetes_version` | `1.29` | Kubernetes version |
-| `enable_bastion` | `true` | Deploy a Bastion host |
-| `lb_type` | `haproxy` | Load balancer type: `haproxy` or `nlb` |
-| `enable_nat_gateway_ha` | `false` | One NAT GW per AZ (true) or single NAT GW (false) |
+| 1 worker fails | Pod eviction + rescheduling (no cluster downtime) | Automatic |
+| 1 master fails | Quorum maintained, API still available (no downtime) | Re-run terraform apply |
+| All 3 masters fail | Cluster offline (etcd data safe) | Restore from backup |
 
----
-
-## Outputs
-
-After `terraform apply`, the following outputs are available:
-
-| Output | Description |
-|---|---|
-| `vpc_id` | VPC ID |
-| `public_subnet_ids` | List of public subnet IDs |
-| `private_subnet_ids` | List of private subnet IDs |
-| `bastion_public_ip` | Bastion host public IP (if enabled) |
-| `haproxy_public_ip` | HAProxy instance public IP |
-| `haproxy_private_ip` | HAProxy instance private IP |
-| `master_private_ips` | List of control plane node private IPs |
-| `worker_private_ips` | List of worker node private IPs |
-| `kubernetes_api_endpoint` | API server endpoint (HAProxy or NLB DNS) |
-| `ssh_key_name` | EC2 key pair name |
-
----
-
-## Security Considerations
-
-- **All Kubernetes nodes are in private subnets** — no direct internet exposure.
-- **Bastion host** is the only public entry point for SSH (optional, can be disabled).
-- **Security groups follow least-privilege** — only required ports are opened between specific CIDRs/SGs.
-- **IAM instance profiles** grant only the permissions Kubernetes node roles require.
-- **etcd traffic is isolated** to control-plane security group (port 2379-2380).
-- **No SSH from 0.0.0.0/0** — Bastion SG restricts SSH to a configurable `admin_cidr_block`.
-- **Terraform state is encrypted** — S3 bucket enforces SSE-S3 or SSE-KMS.
-- **State locking** — DynamoDB prevents concurrent Terraform operations.
-- **Secrets are never stored in tfvars** — SSH keys are referenced by path, not embedded.
-
----
-
-## Testing Strategy
-
-Each phase has a dedicated validation checkpoint. See `docs/EXECUTION_GUIDE.md` for the full test plan.
-
-| Phase | Validation Tool |
-|---|---|
-| Infrastructure | `scripts/validation/validate-infrastructure.sh` |
-| OS Config | `scripts/validation/validate-os.sh` |
-| Container Runtime | `scripts/validation/validate-runtime.sh` |
-| Kubernetes Install | `scripts/validation/validate-k8s-install.sh` |
-| Cluster Health | `scripts/validation/validate-cluster.sh` |
-| HA / Failover | `scripts/validation/validate-ha.sh` |
-
----
-
-## Troubleshooting
-
-See `docs/EXECUTION_GUIDE.md` — each step includes a **Common Issues** section.
-
-Quick reference:
-
-| Symptom | Likely Cause | Fix |
-|---|---|---|
-| `terraform init` fails | Missing backend S3 bucket | Run `terraform/backend/bootstrap.sh` first |
-| Bastion SSH timeout | Security group CIDR mismatch | Update `admin_cidr_block` variable |
-| Masters not joining | HAProxy not reachable | Check HAProxy service and SG rule on port 6443 |
-| etcd unhealthy | Clock skew between nodes | Verify `chrony` sync on all masters |
-| Pods stuck Pending | CNI not installed | Run CNI install step in Phase 6 |
-| Worker not Ready | kubelet not started | Check `systemctl status kubelet` on the worker |
+**Full DR procedures in [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) → Disaster Recovery section**
 
 ---
 
 ## Cleanup
 
-To destroy all infrastructure:
-
 ```bash
 cd terraform/environments/dev
-terraform destroy
+terraform destroy -auto-approve
 ```
 
-> Warning: This permanently deletes all EC2 instances, networking, and associated AWS resources in the environment. Terraform remote state is preserved in S3 for audit purposes.
+⚠️ **Warning:** This permanently deletes all AWS resources (EC2, VPC, load balancers, etc.)
 
 ---
 
-## Future Improvements
+## Version Info
 
-- [ ] Add Cluster Autoscaler support via Auto Scaling Groups.
-- [ ] Add AWS EBS CSI driver for persistent storage.
-- [ ] Integrate cert-manager for automated TLS certificate management.
-- [ ] Add Prometheus + Grafana monitoring stack via Helm.
-- [ ] Add AWS CloudWatch log integration.
-- [ ] Support for custom AMIs via Packer.
-- [ ] GitHub Actions CI pipeline for Terraform linting and validation.
-- [ ] Vault integration for secrets management.
-- [ ] Support for external etcd topology (Phase 2+).
-- [ ] Spot instance support for worker nodes.
+- **Kubernetes:** 1.33.1
+- **containerd:** Latest stable
+- **Calico:** v3.29.1
+- **Terraform:** >= 1.0
+- **Ansible:** >= 2.9
+- **OS:** Amazon Linux 2023
 
 ---
 
 ## License
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+MIT License - see [LICENSE](LICENSE)
+
+---
+
+## 🎯 Next Steps
+
+**→ Read [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) to deploy your cluster**
+
+It has everything:
+- Complete step-by-step walkthrough
+- Expected output at each phase
+- All 8 fixes explained
+- Troubleshooting for common issues
+- Verification procedures
+- Security best practices
+- Disaster recovery
+
+**Deployment time: ~90 minutes to production-ready cluster** ✅

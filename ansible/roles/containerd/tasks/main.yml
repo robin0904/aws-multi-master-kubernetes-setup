@@ -77,21 +77,15 @@
   register: containerd_socket
 
 - name: Download runc
-  unarchive:
-    src: "https://github.com/opencontainers/runc/releases/download/v{{ runc_version }}/runc.amd64"
-    dest: /usr/local/bin
-    remote_src: yes
+  get_url:
+    url: "https://github.com/opencontainers/runc/releases/download/v{{ runc_version }}/runc.amd64"
+    dest: /usr/local/bin/runc
     mode: '0755'
+  retries: 3
+  delay: 10
+  register: runc_download
+  until: runc_download is succeeded
   ignore_errors: yes
-
-- name: Install runc manually (fallback)
-  block:
-    - name: Download runc binary
-      get_url:
-        url: "https://github.com/opencontainers/runc/releases/download/v{{ runc_version }}/runc.amd64"
-        dest: /usr/local/bin/runc
-        mode: '0755'
-  when: ansible_failed_when is undefined
 
 - name: Create CNI directories
   file:

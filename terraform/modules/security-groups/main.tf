@@ -242,12 +242,10 @@ resource "aws_security_group_rule" "masters_vxlan_from_workers" {
   source_security_group_id = aws_security_group.workers.id
 }
 
-# SSH from bastion to masters
+# SSH from bastion to masters (CRITICAL for ProxyCommand to work)
 resource "aws_security_group_rule" "masters_ssh_from_bastion" {
-  count = var.enable_bastion ? 1 : 0
-
   type                     = "ingress"
-  description              = "SSH from bastion"
+  description              = "SSH from bastion (CRITICAL - required for SSH ProxyCommand)"
   from_port                = 22
   to_port                  = 22
   protocol                 = "tcp"
@@ -264,6 +262,28 @@ resource "aws_security_group_rule" "masters_ssh_from_admin" {
   protocol          = "tcp"
   security_group_id = aws_security_group.masters.id
   cidr_blocks       = [var.admin_cidr_block]
+}
+
+# SSH between masters (for inter-node communication)
+resource "aws_security_group_rule" "masters_ssh_from_masters" {
+  type              = "ingress"
+  description       = "SSH between masters (inter-node)"
+  from_port         = 22
+  to_port           = 22
+  protocol          = "tcp"
+  security_group_id = aws_security_group.masters.id
+  self              = true
+}
+
+# SSH from masters to workers (for node-to-node communication)
+resource "aws_security_group_rule" "workers_ssh_from_masters" {
+  type                     = "ingress"
+  description              = "SSH from masters to workers"
+  from_port                = 22
+  to_port                  = 22
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.workers.id
+  source_security_group_id = aws_security_group.masters.id
 }
 
 # -----------------------------------------------------------------------------
@@ -341,12 +361,10 @@ resource "aws_security_group" "workers" {
   })
 }
 
-# SSH from bastion to workers
+# SSH from bastion to workers (CRITICAL for ProxyCommand to work)
 resource "aws_security_group_rule" "workers_ssh_from_bastion" {
-  count = var.enable_bastion ? 1 : 0
-
   type                     = "ingress"
-  description              = "SSH from bastion"
+  description              = "SSH from bastion (CRITICAL - required for SSH ProxyCommand)"
   from_port                = 22
   to_port                  = 22
   protocol                 = "tcp"
@@ -363,4 +381,15 @@ resource "aws_security_group_rule" "workers_ssh_from_admin" {
   protocol          = "tcp"
   security_group_id = aws_security_group.workers.id
   cidr_blocks       = [var.admin_cidr_block]
+}
+
+# SSH between workers (inter-worker communication)
+resource "aws_security_group_rule" "workers_ssh_from_workers" {
+  type              = "ingress"
+  description       = "SSH between workers (inter-node)"
+  from_port         = 22
+  to_port           = 22
+  protocol          = "tcp"
+  security_group_id = aws_security_group.workers.id
+  self              = true
 }

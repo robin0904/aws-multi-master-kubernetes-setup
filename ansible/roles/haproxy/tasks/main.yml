@@ -50,8 +50,10 @@
 
 - name: Wait for HAProxy to be ready
   wait_for:
+    host: "{{ hostvars[inventory_hostname].get('haproxy_private_ip', 'localhost') }}"
     port: "{{ haproxy_port }}"
     timeout: 10
+    delay: 2
   ignore_errors: yes
 
 - name: Verify HAProxy is listening

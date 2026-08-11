@@ -60,8 +60,32 @@
         remote_src: yes
         mode: '0600'
 
-    - name: Wait for API server to be ready
-      shell: "kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes"
+    - name: Make kubeconfig readable for non-root users
+      file:
+        path: /etc/kubernetes/admin.conf
+        mode: '0644'
+
+    - name: Create ec2-user .kube directory first (MUST be before copy)
+      file:
+        path: /home/ec2-user/.kube
+        state: directory
+        mode: '0755'
+        owner: ec2-user
+        group: ec2-user
+      become: yes
+
+    - name: Copy kubeconfig to ec2-user home for easier access
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /home/ec2-user/.kube/config
+        remote_src: yes
+        mode: '0644'
+        owner: ec2-user
+        group: ec2-user
+      become: yes
+
+    - name: Wait for API server to be ready (using sudo)
+      shell: "sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes"
       register: api_ready
       until: api_ready.rc == 0
       retries: 30
@@ -71,27 +95,77 @@
 
 - name: Install Calico CNI
   block:
-    - name: Download Calico manifest (simpler version without operator)
-      get_url:
-        url: "https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/calico.yaml"
-        dest: /tmp/calico.yaml
-
-    - name: Apply Calico CNI
-      shell: "kubectl --kubeconfig=/etc/kubernetes/admin.conf apply -f /tmp/calico.yaml --validate=false"
+    - name: Download and apply Calico manifest using curl
+      shell: |
+        curl -L https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/calico.yaml 2>/dev/null | \
+        sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf apply -f - --validate=false
       register: calico_apply
       changed_when: "'created' in calico_apply.stdout or 'configured' in calico_apply.stdout"
       retries: 5
-      delay: 10
+      delay: 15
       until: calico_apply.rc == 0
       ignore_errors: yes
 
-    - name: Wait for Calico pods to be ready
-      shell: "kubectl --kubeconfig=/etc/kubernetes/admin.conf get daemonset -n calico-system calico-node -o jsonpath='{.status.numberReady}' 2>/dev/null | grep -q '[0-9]' && echo 'ready'"
+    - name: Wait for Calico manifests to apply
+      shell: "sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf get daemonset -n kube-system calico-node 2>/dev/null | grep -q calico-node"
+      register: calico_applied
+      until: calico_applied.rc == 0
+      retries: 10
+      delay: 5
+
+    - name: Wait for all Calico pods to be Ready (check desired == ready)
+      shell: |
+        desired=$(sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf get daemonset -n kube-system calico-node -o jsonpath='{.status.desiredNumberScheduled}' 2>/dev/null)
+        ready=$(sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf get daemonset -n kube-system calico-node -o jsonpath='{.status.numberReady}' 2>/dev/null)
+        [ "$desired" -eq "$ready" ] && [ "$desired" -gt 0 ] && echo "Calico pods ready: $ready/$desired"
       register: calico_ready
       until: calico_ready.rc == 0
+      retries: 60
+      delay: 10
+      ignore_errors: yes
+
+    - name: Verify node CIDR allocation for Calico IPAM
+      shell: |
+        nodes=$(sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)
+        for node in $nodes; do
+          cidr=$(sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf get node $node -o jsonpath='{.status.podCIDRs[0]}' 2>/dev/null)
+          if [ -z "$cidr" ]; then
+            echo "Warning: Node $node missing pod CIDR - IPAM may not be allocated yet"
+          fi
+        done
+        echo "CIDR check complete"
+      register: cidr_check
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Verify calico-kube-controllers deployment is ready
+      shell: "sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf get deployment -n kube-system calico-kube-controllers -o jsonpath='{.status.readyReplicas}' 2>/dev/null | grep -q '1'"
+      register: controllers_ready
+      until: controllers_ready.rc == 0
       retries: 30
       delay: 10
       ignore_errors: yes
+
+    - name: Print Calico deployment status
+      shell: |
+        echo "=== Calico Daemonset Status ==="
+        sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf get daemonset -n kube-system calico-node -o wide 2>/dev/null || echo "Daemonset not found"
+        echo ""
+        echo "=== Calico Kube Controllers Status ==="
+        sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf get deployment -n kube-system calico-kube-controllers -o wide 2>/dev/null || echo "Deployment not found"
+        echo ""
+        echo "=== Calico Pod Status ==="
+        sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf get pods -n kube-system -l k8s-app=calico-node -o wide 2>/dev/null || echo "Pods not found"
+        echo ""
+        echo "=== Node CIDR Allocation ==="
+        sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes -o wide 2>/dev/null | grep -E "NAME|PodCIDRs" || echo "Cannot show node info"
+      register: calico_status
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Display Calico status
+      debug:
+        msg: "{{ calico_status.stdout_lines }}"
 
 - name: Fetch kubeconfig to local machine
   fetch:

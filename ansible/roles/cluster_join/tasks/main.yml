@@ -22,21 +22,71 @@
 
 - name: Join additional master nodes
   block:
-    - name: Fetch certificate key from first master
-      shell: "kubeadm init phase upload-certs --upload-certs --kubeconfig=/etc/kubernetes/admin.conf 2>/dev/null | tail -1"
-      register: cert_key
+    - name: Stop kubelet before join (to allow kubeadm to recreate kubelet.conf)
+      systemd:
+        name: kubelet
+        state: stopped
+      become: yes
+      when: node_type == 'master' and not is_first_master
+      ignore_errors: yes
+
+    - name: Check if master node already in cluster (FIX #6 - ROBUST WAIT)
+      shell: "sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf get node {{ inventory_hostname }} 2>&1 | grep -q 'Ready'"
+      delegate_to: "{{ groups['masters'][0] }}"
+      delegate_facts: false
+      register: node_already_joined
+      changed_when: false
+      ignore_errors: yes
+      retries: 5
+      delay: 3
+      until: (node_already_joined.rc == 0) or (node_already_joined.rc == 1 and "not found" in node_already_joined.stdout)
+      when: node_type == 'master' and not is_first_master
+
+    - name: Reset kubeadm state (remove all Kubernetes files) for masters - ONLY IF NOT ALREADY JOINED
+      shell: |
+        sudo kubeadm reset --force 2>/dev/null || true
+        sudo rm -rf /etc/kubernetes /var/lib/etcd /var/lib/kubelet/pki
+        sudo rm -f /var/lib/kubelet/kubeadm-flags.env /etc/kubernetes/kubelet.conf
+      become: yes
+      when: node_type == 'master' and not is_first_master and node_already_joined.rc != 0
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Fetch fresh certificate key from first master (FIX #5 - FRESH FOR EACH MASTER)
+      shell: |
+        sudo kubeadm init phase upload-certs --upload-certs --kubeconfig=/etc/kubernetes/admin.conf 2>&1 | \
+        grep -E "^[a-f0-9]{64}$" | tail -1
+      register: cert_key_result
       delegate_to: "{{ groups['masters'][0] }}"
       delegate_facts: false
       changed_when: false
+      retries: 3
+      delay: 5
+      until: cert_key_result.stdout | length == 64 and cert_key_result.rc == 0
+      when: node_type == 'master' and not is_first_master and node_already_joined.rc != 0
 
-    - name: Create master join configuration
+    - name: Validate certificate key format (FIX #5)
+      assert:
+        that:
+          - cert_key_result.stdout | length == 64
+          - cert_key_result.stdout is match('^[a-f0-9]{64}$')
+        fail_msg: "Certificate key parsing failed or invalid format. Got: '{{ cert_key_result.stdout }}' (length: {{ cert_key_result.stdout | length }})"
+        success_msg: "Certificate key validated: {{ cert_key_result.stdout[:16] }}... (64 chars)"
+      when: node_type == 'master' and not is_first_master and node_already_joined.rc != 0
+
+    - name: Store fresh certificate key (FIX #5)
+      set_fact:
+        cert_key: "{{ cert_key_result.stdout }}"
+      when: node_type == 'master' and not is_first_master and node_already_joined.rc != 0
+
+    - name: Create master join configuration (FIX #5 - USES FRESH CERT KEY)
       copy:
         dest: /tmp/kubeadm-join-master.yml
         content: |
           apiVersion: kubeadm.k8s.io/v1beta3
           kind: JoinConfiguration
           controlPlane:
-            certificateKey: "{{ cert_key.stdout }}"
+            certificateKey: "{{ cert_key }}"
           discovery:
             bootstrapToken:
               apiServerEndpoint: "{{ hostvars[groups['haproxy'][0]]['haproxy_private_ip'] }}:{{ api_server_port }}"
@@ -45,14 +95,26 @@
               - "{{ ca_cert_hash }}"
           nodeRegistration:
             name: "{{ inventory_hostname }}"
+      when: node_type == 'master' and not is_first_master and node_already_joined.rc != 0
 
-    - name: Run kubeadm join for masters
-      command: "kubeadm join {{ hostvars[groups['haproxy'][0]]['haproxy_private_ip'] }}:{{ api_server_port }} --token {{ join_token }} --discovery-token-ca-cert-hash {{ ca_cert_hash }} --control-plane --certificate-key {{ cert_key.stdout }} --ignore-preflight-errors=NumCPU,Mem"
+    - name: Run kubeadm join for masters (only if not already in cluster) (FIX #7 - WITH RETRY)
+      command: "sudo kubeadm join {{ hostvars[groups['haproxy'][0]]['haproxy_private_ip'] }}:{{ api_server_port }} --token {{ join_token }} --discovery-token-ca-cert-hash {{ ca_cert_hash }} --control-plane --certificate-key {{ cert_key }} --ignore-preflight-errors=NumCPU,Mem"
       register: master_join_output
+      retries: 2
+      delay: 30
+      until: master_join_output.rc == 0
+      when: node_type == 'master' and not is_first_master and node_already_joined.rc != 0
+
+    - name: Restart kubelet after master join
+      systemd:
+        name: kubelet
+        state: restarted
+        daemon_reload: yes
+      become: yes
       when: node_type == 'master' and not is_first_master
 
     - name: Wait for master node to be ready
-      shell: "kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes {{ inventory_hostname }}"
+      shell: "sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes {{ inventory_hostname }}"
       register: master_ready
       delegate_to: "{{ groups['masters'][0] }}"
       delegate_facts: false
@@ -65,13 +127,54 @@
 
 - name: Join worker nodes
   block:
-    - name: Run kubeadm join for workers
-      command: "kubeadm join {{ hostvars[groups['haproxy'][0]]['haproxy_private_ip'] }}:{{ api_server_port }} --token {{ join_token }} --discovery-token-ca-cert-hash {{ ca_cert_hash }} --ignore-preflight-errors=NumCPU,Mem"
+    - name: Stop kubelet before join (to allow kubeadm to recreate kubelet.conf)
+      systemd:
+        name: kubelet
+        state: stopped
+      become: yes
+      when: node_type == 'worker'
+      ignore_errors: yes
+
+    - name: Check if worker node already in cluster (FIX #6 - ROBUST WAIT)
+      shell: "sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf get node {{ inventory_hostname }} 2>&1 | grep -q 'Ready'"
+      delegate_to: "{{ groups['masters'][0] }}"
+      delegate_facts: false
+      register: worker_node_already_joined
+      changed_when: false
+      ignore_errors: yes
+      retries: 5
+      delay: 3
+      until: (worker_node_already_joined.rc == 0) or (worker_node_already_joined.rc == 1 and "not found" in worker_node_already_joined.stdout)
+      when: node_type == 'worker'
+
+    - name: Reset kubeadm state (remove all Kubernetes files) for workers - ONLY IF NOT ALREADY JOINED
+      shell: |
+        sudo kubeadm reset --force 2>/dev/null || true
+        sudo rm -rf /etc/kubernetes /var/lib/etcd /var/lib/kubelet/pki
+        sudo rm -f /var/lib/kubelet/kubeadm-flags.env /etc/kubernetes/kubelet.conf
+      become: yes
+      when: node_type == 'worker' and worker_node_already_joined.rc != 0
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Run kubeadm join for workers (only if not already in cluster) (FIX #7 - WITH RETRY)
+      command: "sudo kubeadm join {{ hostvars[groups['haproxy'][0]]['haproxy_private_ip'] }}:{{ api_server_port }} --token {{ join_token }} --discovery-token-ca-cert-hash {{ ca_cert_hash }} --ignore-preflight-errors=NumCPU,Mem"
       register: worker_join_output
+      retries: 2
+      delay: 30
+      until: worker_join_output.rc == 0
+      when: node_type == 'worker' and worker_node_already_joined.rc != 0
+
+    - name: Restart kubelet after worker join
+      systemd:
+        name: kubelet
+        state: restarted
+        daemon_reload: yes
+      become: yes
       when: node_type == 'worker'
 
     - name: Wait for worker node to be ready
-      shell: "kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes {{ inventory_hostname }}"
+      shell: "sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes {{ inventory_hostname }}"
       register: worker_ready
       delegate_to: "{{ groups['masters'][0] }}"
       delegate_facts: false
@@ -80,7 +183,7 @@
       delay: 10
       when: node_type == 'worker'
 
-  when: node_type == 'worker' or (node_type == 'master' and not is_first_master)
+  when: node_type == 'worker'
 
 - name: Print cluster join status
   debug:
